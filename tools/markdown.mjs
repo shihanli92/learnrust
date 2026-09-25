@@ -5,6 +5,7 @@
 //   | pipe | tables |, ``` fenced code ```, **bold**, *italic*, `code`, [links](url)
 //   :::note / :::tip / :::warning ... :::      callouts
 //   :::exercise Title ... :::solution ... :::  exercises with a hidden solution
+//   :::rosalind ID Title ... :::solution ... ::: the same, linked to rosalind.info/problems/<id>/
 //   ```quiz                                    multiple-choice questions (see README)
 
 import { highlight } from "./highlight.mjs";
@@ -121,7 +122,8 @@ function renderQuiz(src, ctx) {
 
 // ---------------------------------------------------------------- blocks
 
-export function render(md, ctx = { file: "?", quizCount: 0, exerciseCount: 0, toc: [] }) {
+export function render(md, ctx = { file: "?", quizCount: 0, exerciseCount: 0, toc: [], rosalind: [] }) {
+  ctx.rosalind ??= [];
   const lines = md.replace(/\r\n/g, "\n").split("\n");
   let i = 0;
   const html = [];
@@ -162,7 +164,7 @@ export function render(md, ctx = { file: "?", quizCount: 0, exerciseCount: 0, to
         if (/^:::\s*$/.test(l)) {
           depth--;
           if (depth === 0) break;
-        } else if (/^:::\w+/.test(l) && kind !== "exercise") {
+        } else if (/^:::\w+/.test(l) && kind !== "exercise" && kind !== "rosalind") {
           depth++;
         }
         buf.push(l);
@@ -228,9 +230,19 @@ export function render(md, ctx = { file: "?", quizCount: 0, exerciseCount: 0, to
 }
 
 function renderContainer(kind, arg, body, ctx) {
+  // :::rosalind DNA Counting DNA Nucleotides  →  an exercise linked to rosalind.info/problems/dna/
+  let rosalind = null;
+  if (kind === "rosalind") {
+    const m = arg.match(/^([A-Z0-9]+)\s+(.+)$/);
+    if (!m) throw new Error(`${ctx.file}: expected ":::rosalind ID Title", got ":::rosalind ${arg}"`);
+    rosalind = m[1];
+    arg = m[2];
+    kind = "exercise";
+  }
   if (kind === "exercise") {
     const [task, solution] = body.split(/^:::solution\s*$/m);
     const n = ++ctx.exerciseCount;
+    if (rosalind) ctx.rosalind.push(rosalind);
     const sol = solution
       ? `<details class="solution"><summary>Show a solution</summary>${render(solution, ctx)}</details>`
       : "";
@@ -238,7 +250,13 @@ function renderContainer(kind, arg, body, ctx) {
     const practice = /^```rust(?!,ignore)/m.test(task)
       ? ""
       : renderCode("rust,file=Your answer", "fn main() {\n    // Write your answer here, then press Run.\n}", ctx);
-    return `<section class="exercise"><p class="exercise-kicker">Exercise ${n}</p><h3>${inline(arg || "Try it yourself")}</h3>${render(task, ctx)}${practice}${sol}</section>`;
+    const kicker = rosalind
+      ? `<p class="exercise-kicker">Exercise ${n} · Rosalind <span class="rosalind-id">${rosalind}</span></p>`
+      : `<p class="exercise-kicker">Exercise ${n}</p>`;
+    const link = rosalind
+      ? `<p class="rosalind-link"><a href="https://rosalind.info/problems/${rosalind.toLowerCase()}/" target="_blank" rel="noopener">Solve ${rosalind} on Rosalind with your own dataset ↗</a></p>`
+      : "";
+    return `<section class="exercise${rosalind ? " exercise-rosalind" : ""}">${kicker}<h3>${inline(arg || "Try it yourself")}</h3>${render(task, ctx)}${practice}${link}${sol}</section>`;
   }
   if (["note", "tip", "warning"].includes(kind)) {
     const title = arg || { note: "Note", tip: "Tip", warning: "Watch out" }[kind];

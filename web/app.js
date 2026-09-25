@@ -109,7 +109,7 @@
         <div>
           <p class="eyebrow">A self-paced Rust course · ${lessons.length} lessons</p>
           <h1>From <code>fn main()</code> to your own crate on crates.io</h1>
-          <p>Start with the syntax, get comfortable with ownership and the borrow checker, then build, test, document and publish a real library. Each lesson has examples you can edit and run, exercises with solutions and a short quiz.</p>
+          <p>Start with the syntax, get comfortable with ownership and the borrow checker, then build, test, document and publish a real library. Every lesson has examples you can edit and run, bioinformatics problems from <a href="https://rosalind.info" target="_blank" rel="noopener">Rosalind</a> to solve, and a short quiz.</p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#${resume.id}">${started ? `Continue: ${pad(resume.n)} ${esc(resume.title)}` : "Start lesson 01"} →</a>
             ${started ? `<span class="module-count">${done} of ${lessons.length} lessons complete</span>` : ""}
@@ -117,15 +117,15 @@
         </div>
         <div class="terminal" aria-label="Where the course ends up">
           <div class="terminal-head" aria-hidden="true"><i></i><i></i><i></i></div>
-          <pre><span class="tok-prompt">$ </span><span class="tok-cmd">cargo new --lib wordstat</span>
-<span class="tok-ok">    Creating</span> library \`wordstat\` package
+          <pre><span class="tok-prompt">$ </span><span class="tok-cmd">cargo new --lib dnakit</span>
+<span class="tok-ok">    Creating</span> library \`dnakit\` package
 <span class="tok-prompt">$ </span><span class="tok-cmd">cargo test</span>
-<span class="tok-ok">   Compiling</span> wordstat v0.1.0
-test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
+test result: <span class="tok-ok">ok</span>. 24 passed; 0 failed
+<span class="tok-prompt">$ </span><span class="tok-cmd">dnakit gc rosalind_gc.txt</span>
+Rosalind_4721
+53.846154
 <span class="tok-prompt">$ </span><span class="tok-cmd">cargo publish</span>
-<span class="tok-ok">   Packaging</span> wordstat v0.1.0
-<span class="tok-ok">   Uploading</span> wordstat v0.1.0
-<span class="tok-ok">   Published</span> wordstat v0.1.0 at registry \`crates-io\`</pre>
+<span class="tok-ok">   Published</span> dnakit v0.1.0 at registry \`crates-io\`</pre>
         </div>
       </section>
 
@@ -146,7 +146,7 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
                 </header>
                 <ol>${ls
                   .map(
-                    (l) => `<li><a href="#${l.id}" class="${isDone(l.id) ? "is-done" : ""}"><span><span class="lesson-num">${pad(l.n)}</span> ${esc(l.title)}</span><span class="tick" aria-label="${isDone(l.id) ? "Completed" : "Not completed"}"></span></a></li>`
+                    (l) => `<li><a href="#${l.id}" class="${isDone(l.id) ? "is-done" : ""}"><span><span class="lesson-num">${pad(l.n)}</span> ${esc(l.title)}${l.rosalind.map((r) => ` <span class="rid">${esc(r)}</span>`).join("")}</span><span class="tick" aria-label="${isDone(l.id) ? "Completed" : "Not completed"}"></span></a></li>`
                   )
                   .join("")}</ol>
               </article>`;
@@ -155,10 +155,18 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
         </div>
       </section>
 
+      <section class="problem-set">
+        <h2 class="section-title">Rosalind problems in this course</h2>
+        <p>Each lesson's exercises are real problems from <a href="https://rosalind.info" target="_blank" rel="noopener">Rosalind</a>, chosen to practise that lesson's Rust. Solve one here, then download your dataset on Rosalind and submit the answer for credit.</p>
+        <ol class="problem-list">${lessons
+          .flatMap((l) => l.rosalind.map((r) => `<li><a href="#${l.id}"><span class="rid">${esc(r)}</span><span class="lesson-num">${pad(l.n)}</span></a></li>`))
+          .join("")}</ol>
+      </section>
+
       <section class="goal">
         <div><h3>Edit and run everything</h3><p>Every Rust example is editable. Change it and press Run (or Ctrl+Enter) to compile it on the Rust Playground and see the output right here. Your edits are saved in this browser.</p></div>
-        <div><h3>Type the exercises</h3><p>Try each exercise before opening the solution. Getting a compiler error and fixing it is how Rust sinks in.</p></div>
-        <div><h3>Finish with a crate</h3><p>The last module builds <code>wordstat</code>, a small library with tests and docs, and shows you how to publish it or keep it private.</p></div>
+        <div><h3>Solve, then submit</h3><p>Try each problem before opening the solution. Once it works on the sample, run it on your Rosalind dataset. Getting a compiler error and fixing it is how Rust sinks in.</p></div>
+        <div><h3>Finish with a crate</h3><p>The last module turns your solutions into <code>dnakit</code>, a bioinformatics library and command-line tool with tests and docs, and shows you how to publish it or keep it private.</p></div>
       </section>
     </div>`;
     renderRail(null);

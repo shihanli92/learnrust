@@ -364,6 +364,40 @@ button { font: inherit; color: inherit; }
 .module-card li:first-child a { border-top: 0; }
 .module-card li a:hover { color: var(--accent); }
 
+.rid {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0 5px;
+  border-radius: 3px;
+  vertical-align: 1px;
+}
+.problem-set > p { margin: 0 0 18px; color: var(--muted); max-width: 64ch; }
+.problem-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+.problem-list a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+}
+.problem-list a:hover { border-color: var(--accent); }
+.problem-list .rid { font-size: 13px; background: none; padding: 0; }
 .goal {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -634,6 +668,14 @@ tr:last-child td { border-bottom: 0; }
   letter-spacing: 0.08em;
 }
 .exercise h3 { margin-top: 0 !important; }
+.rosalind-id {
+  font-weight: 600;
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+.rosalind-link { margin: 0 0 12px !important; font-size: 15px; font-weight: 600; }
 .solution { margin: 0 0 14px; }
 .solution summary {
   cursor: pointer;

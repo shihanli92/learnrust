@@ -21,7 +21,7 @@ for (const file of files) {
   for (const key of ["title", "module", "summary", "minutes"]) {
     if (!meta[key]) throw new Error(`${file}: missing front matter "${key}"`);
   }
-  const ctx = { file, quizCount: 0, exerciseCount: 0, toc: [] };
+  const ctx = { file, quizCount: 0, exerciseCount: 0, toc: [], rosalind: [] };
   const html = render(body, ctx);
   const id = file.replace(/\.md$/, "");
   lessons.push({
@@ -32,6 +32,7 @@ for (const file of files) {
     summary: meta.summary,
     minutes: meta.minutes,
     toc: ctx.toc,
+    rosalind: ctx.rosalind,
     html,
   });
   let mod = modules[modules.length - 1];
