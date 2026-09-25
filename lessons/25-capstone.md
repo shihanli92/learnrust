@@ -7,13 +7,13 @@ minutes: 120
 
 Time to build something real. In this project you will write `dnakit`, a library crate for DNA, RNA and protein sequences (reading FASTA files, counting bases, GC content, transcription, reverse complements and translation) plus a command-line tool that uses it to solve Rosalind problems straight from a downloaded dataset. Along the way you will use almost everything from the course: structs and enums, pattern matching, collections, a custom error type, closures and iterators, modules, tests, doc comments and Cargo metadata. At the end, the crate is ready to publish.
 
-You have solved most of these problems before, one program at a time. The difference now is structure: the solutions become a tested, documented library with one tool in front of it, which is how real bioinformatics software is organised. Work through the steps in order and type the code yourself rather than copying it. A finished reference implementation lives in the course repository in the `capstone/dnakit/` folder, and the code on this page is identical to it, so you can compare your version whenever you get stuck.
+You have solved most of these problems before, one program at a time. The difference now is structure: the solutions become a tested, documented library with one tool in front of it, which is how real bioinformatics software is organised. Work through the steps in order and type the code yourself rather than copying it. A finished reference implementation lives in the course repository in the `capstone/dnakit/` folder, and the finished files on this page are identical to it, so you can compare your version whenever you get stuck. The crate grows one module at a time, and it compiles and passes its tests after every step, so a few files first appear in an early version that a later step completes.
 
 ## What you will build
 
-Rosalind's GC problem gives you a FASTA file like this one (made up for this page; your download will have different IDs and longer sequences):
+Rosalind's GC problem gives you a FASTA file like this one (made up for this page; your download will have different IDs and longer sequences). To try the examples yourself, save it as `rosalind_gc.txt` in a folder of its own, such as `~/rosalind/`, and not inside the package you are about to create: datasets are input for the tool, not part of it, and files in the package folder end up in git and in the published package.
 
-```text,file=rosalind_gc.txt
+```text,file=~/rosalind/rosalind_gc.txt
 >Rosalind_6397
 TTAGTGACAGTCAAGGCTAAAGCTTATTTCAACAATCATTTGTTGTGTATATGTACCAAT
 ACTTCGCATACTCAGGAACTATACGACACCAA
@@ -28,12 +28,21 @@ GCCTAGATGCACCAAGAAGTCACACGAC
 The finished tool takes the problem ID and the file, and prints the answer in exactly the format Rosalind wants: the ID of the record with the highest GC content, then its GC content as a percentage.
 
 ```console
+$ cd ~/rosalind
 $ dnakit gc rosalind_gc.txt
 Rosalind_6407
 56.190476
 ```
 
-The same tool solves five more problems, and it reports problems in plain words instead of crashing:
+The same tool solves five more problems, and it reports problems in plain words instead of crashing. The next commands use two more small files from the same folder: `rosalind_revc.txt` holds one line of DNA, and `bad.txt` holds the same line with a typo at position 11.
+
+```text,file=~/rosalind/rosalind_revc.txt
+ATGCTTCAGAAAGGTCTTACG
+```
+
+```text,file=~/rosalind/bad.txt
+ATGCTTCAGAXAGGTCTTACG
+```
 
 ```console
 $ dnakit revc rosalind_revc.txt
@@ -42,7 +51,7 @@ $ dnakit dna rosalind_revc.txt
 6 4 5 6
 $ dnakit dna bad.txt
 dnakit: invalid base 'X' at position 11
-$ dnakit subs rosalind_subs.txt
+$ dnakit subs rosalind_revc.txt
 dnakit: unknown problem "subs" (try: dna, rna, revc, gc, hamm, prot)
 $ dnakit revc
 usage: dnakit <problem> <dataset-file>
@@ -60,6 +69,8 @@ $ cargo new --lib dnakit
     Creating library `dnakit` package
 $ cd dnakit
 ```
+
+`cargo new` also makes the folder a git repository, with a `.gitignore` file that keeps the `target/` build folder out of it. You will make the first commit in step 12.
 
 By the end of the project, the package will look like this:
 
@@ -88,64 +99,31 @@ Notice that even the part that turns a dataset into an answer (`rosalind.rs`) is
 
 ## Step 2: The crate root
 
-Replace the contents of `src/lib.rs`:
+`src/lib.rs` is the crate root: it declares the modules and decides what users of the library can see. It grows by one `mod` line per step, so the crate compiles and `cargo test` can run after every step. Replace its contents with this first version, which has only the error module you will write next:
 
-```rust,ignore,file=src/lib.rs
+```rust,ignore,file=src/lib.rs (first version)
 //! Small, dependency-free tools for DNA, RNA and protein sequences.
-//!
-//! `dnakit` reads FASTA files, counts bases, measures GC content, transcribes
-//! DNA into RNA, builds reverse complements and translates RNA into protein.
-//! It ships as a library you can call from your own code and as a
-//! command-line tool of the same name that solves
-//! [Rosalind](https://rosalind.info) problems.
-//!
-//! # Examples
-//!
-//! ```
-//! use dnakit::{fasta, gc_content, reverse_complement, transcribe, translate};
-//!
-//! # fn main() -> Result<(), dnakit::Error> {
-//! let records = fasta::parse(">demo\nATGGC\nCTGAA\n")?;
-//! let dna = &records[0].seq;
-//! assert_eq!(dna, "ATGGCCTGAA");
-//! assert_eq!(gc_content(dna)?, 50.0);
-//! assert_eq!(reverse_complement(dna)?, "TTCAGGCCAT");
-//! assert_eq!(translate(&transcribe(dna)?)?, "MA");
-//! # Ok(())
-//! # }
-//! ```
 
 #![warn(missing_docs)]
 
 mod error;
-pub mod fasta;
-mod protein;
-pub mod rosalind;
-mod seq;
 
 pub use error::Error;
-pub use protein::translate;
-pub use seq::{BaseCounts, count_bases, gc_content, hamming, reverse_complement, transcribe};
 ```
 
-The file does four jobs:
-
-- The `//!` comment is the front page of the documentation, with an example that runs as a doc test. The lines starting with `# ` wrap the example in a hidden `fn main` that returns `Result`, so it can use `?`, exactly as in the documentation lesson.
+- The `//!` comment documents the crate itself and becomes the front page of its documentation. It gets an example in step 7, once there is something to show.
 - `#![warn(missing_docs)]` makes the compiler remind you about every public item you forget to document.
-- `mod error;`, `mod protein;` and `mod seq;` declare private modules, and the `pub use` lines re-export their important items. Users write `dnakit::reverse_complement`, not `dnakit::seq::reverse_complement`, and you are free to reorganise the files later without breaking anyone.
-- `pub mod fasta;` and `pub mod rosalind;` are public modules instead. Their functions are called `parse` and `solve`, which would be too vague on their own. Following the `use` conventions from the modules lesson, users call them with the module name in front: `fasta::parse(...)`, `rosalind::solve(...)`.
+- `mod error;` declares a private module, and `pub use error::Error;` re-exports the type it defines. Users write `dnakit::Error`, not `dnakit::error::Error`, and you are free to reorganise the files later without breaking anyone.
 
-The crate won't compile until all five module files exist, which happens in step 7. Create them in order; after that, `cargo test` checks everything at once.
+The crate won't build until `src/error.rs` exists, which is the very next step.
 
 ## Step 3: The error type
 
-Several things can go wrong in `dnakit`: a sequence can contain a character that isn't a base, a FASTA file can be malformed, a dataset can have the wrong shape, the problem ID can be unknown, and the file can fail to load. Create `src/error.rs`:
+Several things can go wrong in `dnakit`: a sequence can contain a character that isn't a base, a FASTA file can be malformed, a dataset can have the wrong shape, and the file can fail to load. Create `src/error.rs`:
 
-```rust,ignore,file=src/error.rs
+```rust,ignore,file=src/error.rs (first version)
 use std::fmt;
 use std::io;
-
-use crate::rosalind::PROBLEMS;
 
 /// Everything that can go wrong in dnakit.
 #[derive(Debug)]
@@ -173,8 +151,6 @@ pub enum Error {
     /// A dataset did not have the shape the problem needs. The message says
     /// what was expected.
     BadDataset(String),
-    /// The command-line tool was asked to solve a problem it doesn't know.
-    UnknownProblem(String),
     /// A dataset file could not be read.
     Io {
         /// The file we tried to read.
@@ -197,9 +173,6 @@ impl fmt::Display for Error {
                 write!(f, "sequences differ in length ({first} and {second})")
             }
             Error::BadDataset(message) => write!(f, "bad dataset: {message}"),
-            Error::UnknownProblem(name) => {
-                write!(f, "unknown problem {name:?} (try: {})", PROBLEMS.join(", "))
-            }
             Error::Io { path, source } => write!(f, "cannot read {path}: {source}"),
         }
     }
@@ -219,11 +192,13 @@ This follows the custom error lesson:
 
 - An enum with one variant per kind of failure. Variants carry the details a person needs to fix the problem: *which* character, at *which* position, on *which* line. `Io` keeps the file name *and* the original `io::Error`.
 - Positions and line numbers count from 1, because they are for people (and Rosalind counts from 1 too).
-- `Display` writes a message meant for people. The `UnknownProblem` message lists the problems the tool does know, using the `PROBLEMS` constant you will define in step 7, so the message stays correct when you add more.
+- `Display` writes a message meant for people.
 - Implementing `std::error::Error` makes it a proper error type. `source` exposes the underlying I/O error for tools that print error chains.
 - `#[non_exhaustive]` is the attribute from the publishing lesson. Code outside the crate that matches on `Error` must include a `_ =>` arm, so adding a variant in a later version is not a breaking change. Inside the crate, where you know every variant, it changes nothing.
 
 The type is called `Error`, the usual name for a crate's main error type. Users see it as `dnakit::Error`, just as the standard library has `std::io::Error` and `std::fmt::Error`. Inside this file, `std::error::Error` (the trait) is always written out in full so the two don't get mixed up.
+
+This is the first version of the file. Step 7 adds one more variant, for a problem ID the tool doesn't know, together with the code that needs it. Run `cargo test` now: there are no tests yet, so it reports `0 passed` twice (once for unit tests, once for doc tests), but it proves that the crate compiles.
 
 ## Step 4: Reading FASTA
 
@@ -356,6 +331,17 @@ mod tests {
 ```
 
 `matches!` returns `true` if a value matches a pattern, and patterns can include literal values, so `Error::MissingHeader { line: 2 }` checks both the variant and the line number in one go. Each test checks one behaviour, and its name says which. The edge cases are the valuable ones: blank lines, stray spaces, empty input, and a broken file.
+
+Finally, declare the new module in the crate root. Below `#![warn(missing_docs)]`, `src/lib.rs` now reads:
+
+```rust,ignore,file=src/lib.rs (step 4)
+mod error;
+pub mod fasta;
+
+pub use error::Error;
+```
+
+Unlike `error`, `fasta` is a *public* module. Its function is called `parse`, which would be too vague on its own, so, following the `use` conventions from the modules lesson, users call it with the module name in front: `fasta::parse(...)`. Run `cargo test`: the four new tests pass, and so does the example in the documentation of `parse`, which runs as a doc test.
 
 ## Step 5: Sequence helpers
 
@@ -613,6 +599,19 @@ mod tests {
 
 `reverse_complement_twice_gives_the_original` tests a *property* instead of a single example: doing the operation twice must give back what you started with. `lowercase_is_not_a_base` pins down a decision (lowercase input is rejected), so nobody changes it by accident.
 
+Declare the module in `src/lib.rs` and re-export its public items:
+
+```rust,ignore,file=src/lib.rs (step 5)
+mod error;
+pub mod fasta;
+mod seq;
+
+pub use error::Error;
+pub use seq::{BaseCounts, count_bases, gc_content, hamming, reverse_complement, transcribe};
+```
+
+This time the module stays private and the `pub use` line re-exports the items, so users write `dnakit::reverse_complement`, not `dnakit::seq::reverse_complement`. `cargo test` now runs 11 unit tests and 6 doc tests.
+
 ## Step 6: Translating RNA into protein
 
 A ribosome reads RNA three bases at a time. Each group of three, a *codon*, stands for one amino acid, except the three *stop codons*, which end the protein. Create `src/protein.rs`:
@@ -735,6 +734,21 @@ mod tests {
 ```
 
 `exactly_three_of_the_64_codons_are_stops` is a safety net for the table. With 61 hand-typed codons, a typo is easy, and a typo would make that codon fall through to `_ => return None` and silently cut proteins short. The test builds all 64 possible codons and checks that exactly the three real stop codons are missing from the table.
+
+Add the module to `src/lib.rs`, again private with a re-export:
+
+```rust,ignore,file=src/lib.rs (step 6)
+mod error;
+pub mod fasta;
+mod protein;
+mod seq;
+
+pub use error::Error;
+pub use protein::translate;
+pub use seq::{BaseCounts, count_bases, gc_content, hamming, reverse_complement, transcribe};
+```
+
+`cargo test` now runs 15 unit tests and 7 doc tests.
 
 ## Step 7: Solving Rosalind problems
 
@@ -871,12 +885,98 @@ mod tests {
 
 `every_listed_problem_is_known` makes sure `PROBLEMS` and the `match` in `solve` never drift apart: if you list a problem but forget its arm, this test tells you. `unknown_problem` shows a match guard inside `matches!`, checking the name that was stored in the error.
 
-All five modules exist now, so run the tests:
+Two more changes make the crate compile again. First, declare the module in `src/lib.rs`, below `mod protein;`. Like `fasta`, it is public, so users call `rosalind::solve(...)`:
+
+```rust,ignore,file=src/lib.rs (step 7)
+pub mod rosalind;
+```
+
+Second, `solve` returns `Error::UnknownProblem`, which doesn't exist yet. Add the variant to the `Error` enum in `src/error.rs`, below `BadDataset`:
+
+```rust,ignore,file=src/error.rs (step 7)
+    /// The command-line tool was asked to solve a problem it doesn't know.
+    UnknownProblem(String),
+```
+
+Run `cargo build`, and the compiler points straight at the code that has to change (the start of the message is shown):
+
+```text
+error[E0004]: non-exhaustive patterns: `&error::Error::UnknownProblem(_)` not covered
+  --> src/error.rs:43:15
+   |
+43 |         match self {
+   |               ^^^^ pattern `&error::Error::UnknownProblem(_)` not covered
+```
+
+The `match` in `Display` must handle every variant, and `#[non_exhaustive]` doesn't change that inside the crate that defines the enum. That is a good thing: a new variant can never be left without a message. Add the missing arm below the `BadDataset` arm, and the import it needs at the top of the file, below `use std::io;`:
+
+```rust,ignore,file=src/error.rs (step 7)
+            Error::UnknownProblem(name) => {
+                write!(f, "unknown problem {name:?} (try: {})", PROBLEMS.join(", "))
+            }
+```
+
+```rust,ignore,file=src/error.rs (step 7)
+use crate::rosalind::PROBLEMS;
+```
+
+The message lists the problems the tool does know, using the `PROBLEMS` constant, so it stays correct when you add more. `src/error.rs` is now finished.
+
+### The finished crate root
+
+All five modules exist, so the crate root can get its final form, with a front page that shows the library in action. Replace the contents of `src/lib.rs`:
+
+```rust,ignore,file=src/lib.rs
+//! Small, dependency-free tools for DNA, RNA and protein sequences.
+//!
+//! `dnakit` reads FASTA files, counts bases, measures GC content, transcribes
+//! DNA into RNA, builds reverse complements and translates RNA into protein.
+//! It ships as a library you can call from your own code and as a
+//! command-line tool of the same name that solves
+//! [Rosalind](https://rosalind.info) problems.
+//!
+//! # Examples
+//!
+//! ```
+//! use dnakit::{fasta, gc_content, reverse_complement, transcribe, translate};
+//!
+//! # fn main() -> Result<(), dnakit::Error> {
+//! let records = fasta::parse(">demo\nATGGC\nCTGAA\n")?;
+//! let dna = &records[0].seq;
+//! assert_eq!(dna, "ATGGCCTGAA");
+//! assert_eq!(gc_content(dna)?, 50.0);
+//! assert_eq!(reverse_complement(dna)?, "TTCAGGCCAT");
+//! assert_eq!(translate(&transcribe(dna)?)?, "MA");
+//! # Ok(())
+//! # }
+//! ```
+
+#![warn(missing_docs)]
+
+mod error;
+pub mod fasta;
+mod protein;
+pub mod rosalind;
+mod seq;
+
+pub use error::Error;
+pub use protein::translate;
+pub use seq::{BaseCounts, count_bases, gc_content, hamming, reverse_complement, transcribe};
+```
+
+The file does four jobs:
+
+- The `//!` comment is the front page of the documentation, now with an example that runs as a doc test. The lines starting with `# ` wrap the example in a hidden `fn main` that returns `Result`, so it can use `?`, exactly as in the documentation lesson.
+- `#![warn(missing_docs)]` keeps reminding you about undocumented public items.
+- `mod error;`, `mod protein;` and `mod seq;` declare private modules, and the `pub use` lines re-export their important items, so users write `dnakit::translate` and you can move code between files without breaking anyone.
+- `pub mod fasta;` and `pub mod rosalind;` are public modules, whose vaguely named functions are used with the module name in front: `fasta::parse(...)`, `rosalind::solve(...)`.
+
+Run the tests:
 
 ```console
 $ cargo test
    Compiling dnakit v0.1.0 (/home/you/dnakit)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
      Running unittests src/lib.rs (target/debug/deps/dnakit-7e80fe87409cfb57)
 
 running 19 tests
@@ -909,16 +1009,18 @@ test src/fasta.rs - fasta::parse (line 39) ... ok
 test src/lib.rs - (line 11) ... ok
 test src/protein.rs - protein::translate (line 18) ... ok
 test src/rosalind.rs - rosalind::solve (line 27) ... ok
-test src/seq.rs - seq::count_bases (line 41) ... ok
-test src/seq.rs - seq::gc_content (line 67) ... ok
-test src/seq.rs - seq::hamming (line 143) ... ok
-test src/seq.rs - seq::reverse_complement (line 110) ... ok
-test src/seq.rs - seq::transcribe (line 88) ... ok
+test src/seq.rs - seq::count_bases (line 39) ... ok
+test src/seq.rs - seq::gc_content (line 65) ... ok
+test src/seq.rs - seq::hamming (line 141) ... ok
+test src/seq.rs - seq::reverse_complement (line 108) ... ok
+test src/seq.rs - seq::transcribe (line 86) ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.32s; merged doctests compilation took 0.31s
 ```
 
-The doc tests are the examples you wrote in the `///` comments, compiled and run against the public API.
+The doc tests are the examples you wrote in the `///` comments, compiled and run against the public API. Tests run in parallel, so the lines may come out in a different order for you.
 
 ## Step 8: The command-line tool
 
@@ -965,13 +1067,13 @@ The binary is deliberately thin:
 
 Notice the `use dnakit::{Error, rosalind};` line: the binary uses the library by its crate name, exactly as any other project would.
 
-Try it on the example file from the top of this page. The `--` separates Cargo's own options from the arguments for your program:
+Try it on the example file from the top of this page, which you saved outside the package. The `--` separates Cargo's own options from the arguments for your program:
 
 ```console
-$ cargo run -- gc rosalind_gc.txt
+$ cargo run -- gc ~/rosalind/rosalind_gc.txt
    Compiling dnakit v0.1.0 (/home/you/dnakit)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s
-     Running `target/debug/dnakit gc rosalind_gc.txt`
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running `target/debug/dnakit gc /home/you/rosalind/rosalind_gc.txt`
 Rosalind_6407
 56.190476
 ```
@@ -1199,13 +1301,21 @@ categories = ["science", "command-line-utilities"]
 [dependencies]
 ```
 
-`[dependencies]` is empty: `dnakit` uses only the standard library, which means fast builds and nothing for users to audit. (The Cargo lesson showed that adding `bio` for its FASTA reader brings in almost ninety crates.) The `keywords` and `categories` help people find the crate; categories must come from the official list on crates.io. Replace `your-name` in `repository` with your own GitHub account once you have pushed the code.
+`[dependencies]` is empty: `dnakit` uses only the standard library, which means fast builds and nothing for users to audit. (The Cargo lesson showed that adding `bio` for its FASTA reader brings in over ninety crates.) The `keywords` and `categories` help people find the crate; categories must come from the official list on crates.io. Replace `your-name` in `repository` with your own GitHub account once you have pushed the code.
 
-Check what would be uploaded:
+Cargo packages the files that git tracks, and it refuses to package changes you haven't committed yet, so that what you publish always matches a commit. Make the first commit now:
+
+```console
+$ git add .
+$ git commit -m "First version of dnakit"
+```
+
+(If git asks who you are, tell it once with `git config --global user.name "Your Name"` and `git config --global user.email "you@example.com"`, then run the commit again.) Now check what would be uploaded:
 
 ```console
 $ cargo package --list
 .cargo_vcs_info.json
+.gitignore
 Cargo.lock
 Cargo.toml
 Cargo.toml.orig
@@ -1222,6 +1332,8 @@ src/seq.rs
 tests/cli.rs
 tests/rosalind.rs
 ```
+
+`.cargo_vcs_info.json` records which commit the package was made from, and `Cargo.toml.orig` is your manifest exactly as you wrote it (Cargo uploads a tidied-up copy as `Cargo.toml`). If a file you don't want to publish shows up here, such as a dataset, move it out of the package folder, commit, and check again.
 
 ## Step 13: Publish it, or keep it private
 
@@ -1251,7 +1363,7 @@ and you can install the command-line tool from your own folder with `cargo insta
 
 ## Compare with the reference
 
-The course repository contains the finished project in `capstone/dnakit/`. Its source files are identical to the code on this page, and it passes `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` and `cargo doc`. If your version behaves differently, run both on the same dataset and compare, or diff the files. Small differences in wording or style are fine; the tests (and Rosalind) are the real judge.
+The course repository contains the finished project in `capstone/dnakit/`. Its source files are identical to the finished files on this page, and it passes `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` and `cargo doc`. If your version behaves differently, run both on the same dataset and compare, or diff the files. Small differences in wording or style are fine; the tests (and Rosalind) are the real judge.
 
 :::rosalind SUBS Add a subs command
 A *motif* is a short stretch of DNA that means something, such as a place where a protein binds. The SUBS problem gives you two lines: a DNA string `s` and a shorter motif `t`. The answer is every position where `t` occurs in `s`, counting from 1 and separated by spaces. Occurrences may overlap: in `ATATAT`, the motif `ATA` occurs at 1 and at 3.

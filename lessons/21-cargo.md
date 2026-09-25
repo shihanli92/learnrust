@@ -100,7 +100,7 @@ seq2: 8 bases
 
 `fasta::Reader::new` accepts anything that can be read from, and a byte slice (`DATA.as_bytes()`) is the simplest such thing. Each record comes out as a `Result`, because a real file could be broken halfway through. `record.seq()` returns the sequence as a byte slice, `&[u8]`, rather than a `&str`: DNA is plain ASCII, and bytes are faster to work with.
 
-The first build downloads and compiles `bio` and the crates *it* depends on, almost ninety of them, which is why it takes half a minute. After that they are cached, so later builds only recompile your own code. You can remove a dependency with `cargo remove bio`.
+The first build downloads and compiles `bio` and the crates *it* depends on, over ninety of them, which is why it takes half a minute. After that they are cached, so later builds only recompile your own code. You can remove a dependency with `cargo remove bio`.
 
 :::tip Finding good crates
 Search [crates.io](https://crates.io) for crates and check download counts, recent releases and the linked repository. Every crate published there gets its documentation built automatically on [docs.rs](https://docs.rs), for example `https://docs.rs/bio`. Read the docs before you add a dependency: a clear API and good examples are a sign of a well-maintained crate.
@@ -142,7 +142,7 @@ To move to newer compatible versions deliberately, run `cargo update` (everythin
 
 ## Features
 
-Many crates have optional parts called **features** that you switch on when you need them. This keeps compile times and binary sizes down for everyone who doesn't. In `cargo add` output, `+` marks the features enabled by default and `-` the optional ones. All of `bio`'s features are optional: `phylogeny`, for example, adds a reader for evolutionary trees, and you only pay for compiling it if you switch it on.
+Many crates have optional parts called **features** that you switch on when you need them. This keeps compile times and binary sizes down for everyone who doesn't. In `cargo add` output, `+` marks the features that will be enabled (the defaults plus any you ask for) and `-` the ones that stay off. All of `bio`'s features are optional: `phylogeny`, for example, adds a reader for evolutionary trees, and you only pay for compiling it if you switch it on.
 
 ```console
 $ cargo add serde --features derive
@@ -151,7 +151,14 @@ $ cargo add serde --features derive
              Features:
              + derive
              + serde_derive
+             + std
+             - alloc
+             - rc
+             - unstable
+    ...
 ```
+
+Asking for `derive` also switched on `serde_derive`, the optional dependency that the feature needs. (The lines left out at the end are Cargo updating `Cargo.lock`.)
 
 ```toml
 [dependencies]
@@ -254,7 +261,7 @@ memchr v2.8.3
 Read it from the bottom of each branch up: `bio` uses `regex` and `csv`, and they use `memchr`. The `(*)` marks a crate whose subtree was already shown.
 
 :::note Every dependency is code you trust
-A dependency runs with the same permissions as your own code. Prefer popular, maintained crates, keep the list short, and don't add a crate for something you can write in ten lines. `bio` is excellent when you need its algorithms, but it brings in almost ninety crates. The `dnakit` crate you will build in the capstone needs only a FASTA reader and a few sequence functions, so it writes them itself and has no dependencies at all.
+A dependency runs with the same permissions as your own code. Prefer popular, maintained crates, keep the list short, and don't add a crate for something you can write in ten lines. `bio` is excellent when you need its algorithms, but it brings in over ninety crates. The `dnakit` crate you will build in the capstone needs only a FASTA reader and a few sequence functions, so it writes them itself and has no dependencies at all.
 :::
 
 :::exercise Read the requirements

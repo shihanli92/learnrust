@@ -14,7 +14,7 @@ For a library you plan to publish, tests matter twice over. They prove your code
 A test is an ordinary function with the `#[test]` attribute above it. It passes if it returns normally and fails if it panics. The assertion macros panic for you when something is wrong:
 
 ```rust
-fn count_g(dna: &str) -> usize {
+pub fn count_g(dna: &str) -> usize {
     dna.chars().filter(|&base| base == 'G').count()
 }
 
@@ -31,11 +31,13 @@ fn sequences_without_g() {
 }
 ```
 
+Put this in `src/lib.rs` of a library package (here it is called `seqtools`) and run the tests. `count_g` is `pub` because it is part of the library's API. A private function that only tests call would get a "function is never used" warning, because `cargo test` also builds the library the normal way, without the tests, and there nothing calls it.
+
 ```console
 $ cargo test
    Compiling seqtools v0.1.0 (/home/you/seqtools)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
-     Running unittests src/lib.rs (target/debug/deps/seqtools-1c2e6a3b1f0a8d4e)
+     Running unittests src/lib.rs (target/debug/deps/seqtools-f6bbd3cfdf5c202f)
 
 running 2 tests
 test counts_every_g ... ok
@@ -63,7 +65,7 @@ Prefer `assert_eq!` over `assert!(a == b)`. When it fails, it prints both values
 Here is a buggy reverse complement (the REVC problem) and a test that catches it. Every assertion macro also accepts a custom message with `format!`-style arguments, printed when the assertion fails:
 
 ```rust,should_panic
-fn reverse_complement(dna: &str) -> String {
+pub fn reverse_complement(dna: &str) -> String {
     dna.chars()
         .map(|base| match base {
             'A' => 'T',
@@ -90,7 +92,7 @@ failures:
 
 ---- reverse_complement_of_a_short_strand stdout ----
 
-thread 'reverse_complement_of_a_short_strand' panicked at src/lib.rs:16:5:
+thread 'reverse_complement_of_a_short_strand' (2751) panicked at src/lib.rs:16:5:
 assertion `left == right` failed: reverse complement of AACCGT
   left: "TTGGCA"
  right: "ACGGTT"
@@ -103,7 +105,7 @@ failures:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
-You get the test name, the file and line, your message, and both values. Here, `left` is the complement of `AACCGT` but not reversed, which points straight at the bug. Good test names such as `reverse_complement_of_a_short_strand` help too: the list of failures reads like a list of broken behaviours.
+You get the test name (followed by a thread ID, a number that changes from run to run), the file and line, your message, and both values. Here, `left` is the complement of `AACCGT` but not reversed, which points straight at the bug. Good test names such as `reverse_complement_of_a_short_strand` help too: the list of failures reads like a list of broken behaviours.
 
 ## The tests module
 
@@ -195,7 +197,7 @@ A test can also return `Result<(), E>`. It fails if it returns `Err`. That lets 
 use std::num::ParseIntError;
 
 /// Parses the FIB dataset, two numbers such as "6 2".
-fn parse_fib_input(dataset: &str) -> Result<(u64, u64), ParseIntError> {
+pub fn parse_fib_input(dataset: &str) -> Result<(u64, u64), ParseIntError> {
     let text = dataset.trim();
     let (n, k) = text.split_once(' ').unwrap_or((text, ""));
     Ok((n.parse()?, k.trim().parse()?))
@@ -310,7 +312,7 @@ Then think about the tricky cases and add a test for each. Motifs can *overlap*:
 ```text
 ---- overlapping_matches_count stdout ----
 
-thread 'overlapping_matches_count' panicked at src/lib.rs:17:5:
+thread 'overlapping_matches_count' (2969) panicked at src/lib.rs:17:5:
 assertion `left == right` failed
   left: [1, 3]
  right: [1, 2, 3]

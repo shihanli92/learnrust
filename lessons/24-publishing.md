@@ -72,11 +72,12 @@ Paste the token and press Enter. Cargo stores it in `~/.cargo/credentials.toml`.
 
 ## Check what will be uploaded
 
-When you publish, Cargo packs your source files into a `.crate` archive and uploads it. First, look at exactly which files will go in:
+When you publish, Cargo packs your source files into a `.crate` archive and uploads it. It refuses to package uncommitted changes, so that what you publish always matches a Git commit: commit your work first. (`--allow-dirty` overrides this, but it is better not to need it.) Then look at exactly which files will go in:
 
 ```console
 $ cargo package --list
 .cargo_vcs_info.json
+.gitignore
 Cargo.lock
 Cargo.toml
 Cargo.toml.orig
@@ -94,7 +95,7 @@ tests/cli.rs
 tests/rosalind.rs
 ```
 
-Files ignored by Git (such as `target/`) are left out automatically. If something else shouldn't be uploaded, such as large test data or private notes, exclude it in `Cargo.toml` with `exclude = ["notes/", "*.log"]`, or list exactly what to include with `include = [...]`. Uploads are limited to 10 MB. Cargo adds a few files of its own: `Cargo.toml.orig` is your original manifest, `Cargo.toml` is a normalised copy of it, and `.cargo_vcs_info.json` records the Git commit the package was built from.
+Files ignored by Git (such as `target/`) are left out automatically, and the `.gitignore` that `cargo new` created is included like any other file. If something else shouldn't be uploaded, such as large test data or private notes, exclude it in `Cargo.toml` with `exclude = ["notes/", "*.log"]`, or list exactly what to include with `include = [...]`. Uploads are limited to 10 MB. Cargo adds a few files of its own: `Cargo.toml.orig` is your original manifest, `Cargo.toml` is a normalised copy of it, and `.cargo_vcs_info.json` records the Git commit the package was built from.
 
 Then do a full rehearsal:
 
@@ -102,7 +103,7 @@ Then do a full rehearsal:
 $ cargo publish --dry-run
     Updating crates.io index
    Packaging dnakit v0.1.0 (/home/you/dnakit)
-    Packaged 16 files, 37.2KiB (12.6KiB compressed)
+    Packaged 17 files, 37.1KiB (12.6KiB compressed)
    Verifying dnakit v0.1.0 (/home/you/dnakit)
    Compiling dnakit v0.1.0 (/home/you/dnakit/target/package/dnakit-0.1.0)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s
@@ -112,15 +113,13 @@ warning: aborting upload due to dry run
 
 The *Verifying* step is important. Cargo unpacks the archive into a fresh folder and builds it from there. If your crate only compiles because of a file that isn't included, you find out now rather than after publishing. Missing metadata is also reported at this stage.
 
-Cargo also refuses to package if you have uncommitted changes in Git, so what you publish matches a commit. Commit first. (`--allow-dirty` overrides this, but it is better not to need it.)
-
 ## Publish
 
 ```console
 $ cargo publish
     Updating crates.io index
    Packaging dnakit v0.1.0 (/home/you/dnakit)
-    Packaged 16 files, 37.2KiB (12.6KiB compressed)
+    Packaged 17 files, 37.1KiB (12.6KiB compressed)
    Verifying dnakit v0.1.0 (/home/you/dnakit)
    Compiling dnakit v0.1.0 (/home/you/dnakit/target/package/dnakit-0.1.0)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s
@@ -137,6 +136,8 @@ It is a good habit to tag the release in Git so you can always find the exact so
 
 :::warning Published means permanent
 You can't overwrite a version, and you can't delete one. If you publish `0.1.0` with a bug, the fix goes out as `0.1.1`. If you accidentally publish a password or API key, consider it public: revoke it immediately, then yank the version. Check `cargo package --list` before every release.
+
+crates.io does let you delete a *whole crate* in a few limited cases, such as within 72 hours of first publishing it, or later if it has a single owner, very few downloads and no other crates depending on it. The exact rules can change, so check the current [crates.io policies](https://crates.io/policies) rather than counting on it.
 :::
 
 ## Semantic versioning in Rust
@@ -186,7 +187,9 @@ error[E0004]: non-exhaustive patterns: `Format::GenBank` not covered
    |           ^^^^^^ pattern `Format::GenBank` not covered
 ```
 
-If you expect to add variants later, mark the enum `#[non_exhaustive]`, as `dnakit` does with its `Error` type. Code outside your crate is then forced to include a `_ =>` arm, and adding variants becomes a minor change. The same attribute on a struct prevents outside code from using struct literals, so you can add fields later. The Cargo book has a thorough [SemVer compatibility chapter](https://doc.rust-lang.org/cargo/reference/semver.html), and the `cargo-semver-checks` tool can compare your crate against its last published version and flag breaking changes automatically.
+To fit on the page, the example puts the library's enum and the user's function in one file. In real life they live in different crates, which matters for the fix below.
+
+If you expect to add variants later, mark the enum `#[non_exhaustive]`, as `dnakit` does with its `Error` type. Code outside your crate is then forced to include a `_ =>` arm, and adding variants becomes a minor change. The attribute only affects *other* crates: inside the crate that defines the enum, a `match` must still cover every variant, so adding `#[non_exhaustive]` to the one-file example above would not make it compile. The same attribute on a struct prevents outside code from using struct literals, so you can add fields later. The Cargo book has a thorough [SemVer compatibility chapter](https://doc.rust-lang.org/cargo/reference/semver.html), and the `cargo-semver-checks` tool can compare your crate against its last published version and flag breaking changes automatically.
 
 ## Releasing a new version
 
@@ -237,7 +240,7 @@ To make sure a private package is never published by accident, add `publish = fa
 - Everything is committed, and the version number is the one you mean.
 
 :::tip Automating releases
-Once you publish regularly, you can let GitHub Actions do it. crates.io supports *trusted publishing*, where your repository's workflow gets short-lived credentials automatically, so you don't need to store a long-lived token anywhere. Look for it in your crate's settings on crates.io.
+Once you publish regularly, you can let GitHub Actions do it. crates.io supports *trusted publishing*, where your repository's workflow gets short-lived credentials automatically, so you don't need to store a long-lived token anywhere. It is set up in the settings of a crate that already exists, so the first release still has to be published by hand with an API token, as in this lesson. After that, look for it in your crate's settings on crates.io.
 :::
 
 :::exercise Pick the version
