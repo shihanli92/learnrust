@@ -109,7 +109,7 @@
         <div>
           <p class="eyebrow">A self-paced Rust course · ${lessons.length} lessons</p>
           <h1>From <code>fn main()</code> to your own crate on crates.io</h1>
-          <p>Start with the syntax, get comfortable with ownership and the borrow checker, then build, test, document and publish a real library. Each lesson has runnable examples, exercises with solutions and a short quiz.</p>
+          <p>Start with the syntax, get comfortable with ownership and the borrow checker, then build, test, document and publish a real library. Each lesson has examples you can edit and run, exercises with solutions and a short quiz.</p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#${resume.id}">${started ? `Continue: ${pad(resume.n)} ${esc(resume.title)}` : "Start lesson 01"} →</a>
             ${started ? `<span class="module-count">${done} of ${lessons.length} lessons complete</span>` : ""}
@@ -156,7 +156,7 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
       </section>
 
       <section class="goal">
-        <div><h3>Run everything</h3><p>Complete programs have a Run in Playground button, so you can edit and run them in your browser. Install Rust locally when you are ready (lesson 01).</p></div>
+        <div><h3>Edit and run everything</h3><p>Every Rust example is editable. Change it and press Run (or Ctrl+Enter) to compile it on the Rust Playground and see the output right here. Your edits are saved in this browser.</p></div>
         <div><h3>Type the exercises</h3><p>Try each exercise before opening the solution. Getting a compiler error and fixing it is how Rust sinks in.</p></div>
         <div><h3>Finish with a crate</h3><p>The last module builds <code>wordstat</code>, a small library with tests and docs, and shows you how to publish it or keep it private.</p></div>
       </section>
@@ -194,7 +194,7 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
     </article>`;
 
     renderCompleteRow(l);
-    wireCode();
+    wireCode(l);
     wireQuizzes();
     renderRail(l.id);
   }
@@ -216,22 +216,39 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
   // ---------------------------------------------------------- code blocks
 
   const PLAYGROUND = "https://play.rust-lang.org/?version=stable&mode=debug&edition=2024&code=";
+  const PLAY_API = "https://play.rust-lang.org";
+  const draftKey = (lessonId, block) => `learnrust.draft.${lessonId}.${block}`;
 
-  function wireCode() {
+  function loadDraft(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+  function saveDraft(key, code, original) {
+    try {
+      if (code === original) localStorage.removeItem(key);
+      else localStorage.setItem(key, code);
+    } catch (_) { /* drafts last for this visit only */ }
+  }
+
+  function wireCode(lesson) {
     main.querySelectorAll("figure.code").forEach((fig) => {
-      const code = fig.querySelector("pre code").textContent;
-      const play = fig.querySelector("[data-play]");
-      if (play) play.href = PLAYGROUND + encodeURIComponent(code);
+      const codeEl = fig.querySelector("pre code");
+      const original = codeEl.textContent;
+      const getCode = fig.hasAttribute("data-editable") ? makeEditor(fig, lesson, original) : () => original;
+
       const copy = fig.querySelector("[data-copy]");
       copy.addEventListener("click", () => {
-        const text = code.split("\n").map((line) => line.replace(/^\$ /, "")).join("\n");
+        const text = getCode().split("\n").map((line) => line.replace(/^\$ /, "")).join("\n");
         const done = () => { copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1400); };
         const fallback = () => {
-          const range = document.createRange();
-          range.selectNodeContents(fig.querySelector("pre code"));
-          const sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
+          const ta = fig.querySelector("textarea");
+          if (ta) { ta.focus(); ta.select(); }
+          else {
+            const range = document.createRange();
+            range.selectNodeContents(codeEl);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
           copy.textContent = "Selected: press Ctrl+C";
           setTimeout(() => (copy.textContent = "Copy"), 2400);
         };
@@ -248,6 +265,182 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
         if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
       })
     );
+  }
+
+  // Turns a highlighted Rust block into an editor: a transparent textarea laid over the
+  // highlighted <pre>, re-highlighted as you type. Returns a function that reads the current code.
+  function makeEditor(fig, lesson, original) {
+    const pre = fig.querySelector("pre");
+    const codeEl = pre.querySelector("code");
+    const key = draftKey(lesson.id, fig.dataset.block);
+    const play = fig.querySelector("[data-play]");
+    const runBtn = fig.querySelector("[data-run]");
+
+    const wrap = document.createElement("div");
+    wrap.className = "editor";
+    pre.replaceWith(wrap);
+    wrap.appendChild(pre);
+    const ta = document.createElement("textarea");
+    ta.id = `editor-${lesson.id}-${fig.dataset.block}`;
+    ta.setAttribute("wrap", "off");
+    ta.setAttribute("spellcheck", "false");
+    ta.setAttribute("autocapitalize", "off");
+    ta.setAttribute("autocomplete", "off");
+    ta.setAttribute("aria-label", "Rust code editor. Press Ctrl+Enter to run, Escape to leave the editor.");
+    wrap.appendChild(ta);
+
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "code-btn";
+    reset.textContent = "Reset";
+    reset.title = "Undo your edits and restore the original example";
+    fig.querySelector(".code-actions").prepend(reset);
+
+    const status = document.createElement("span");
+    status.className = "edit-state";
+    fig.querySelector("figcaption .code-label").after(status);
+
+    function sync() {
+      const code = ta.value;
+      // A trailing newline needs a character after it or the <pre> is one line short.
+      codeEl.innerHTML = highlight(code.endsWith("\n") ? code + " " : code, "rust");
+      play.href = PLAYGROUND + encodeURIComponent(code);
+      const edited = code !== original;
+      reset.hidden = !edited;
+      status.textContent = edited ? "edited" : "";
+    }
+    ta.value = loadDraft(key) ?? original;
+    sync();
+
+    let saveTimer;
+    ta.addEventListener("input", () => {
+      sync();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveDraft(key, ta.value, original), 300);
+    });
+    ta.addEventListener("scroll", () => { pre.scrollLeft = ta.scrollLeft; pre.scrollTop = ta.scrollTop; });
+    reset.addEventListener("click", () => {
+      ta.value = original;
+      sync();
+      saveDraft(key, original, original);
+      const out = fig.querySelector(".run-out");
+      if (out) out.remove();
+      ta.focus();
+    });
+
+    ta.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        runBtn.click();
+      } else if (e.key === "Escape") {
+        ta.blur();
+      } else if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        insert("    ");
+      } else if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Keep the current line's indentation, and indent one level after an opening brace.
+        const before = ta.value.slice(0, ta.selectionStart);
+        const line = before.slice(before.lastIndexOf("\n") + 1);
+        let indent = line.match(/^\s*/)[0];
+        if (/[{([]\s*$/.test(line)) indent += "    ";
+        e.preventDefault();
+        insert("\n" + indent);
+      }
+    });
+    function insert(text) {
+      // execCommand keeps the browser's undo history working; fall back to direct editing.
+      if (!document.execCommand || !document.execCommand("insertText", false, text)) {
+        const { selectionStart: s, selectionEnd: end } = ta;
+        ta.value = ta.value.slice(0, s) + text + ta.value.slice(end);
+        ta.selectionStart = ta.selectionEnd = s + text.length;
+        ta.dispatchEvent(new Event("input"));
+      }
+    }
+
+    runBtn.addEventListener("click", () => runCode(fig, ta.value));
+    return () => ta.value;
+  }
+
+  // ---------------------------------------------------------- running code
+
+  function kindOf(code) {
+    if (/#\[test\]/.test(code)) return "test";
+    if (/fn main\s*\(/.test(code)) return "bin";
+    return "lib";
+  }
+
+  // Strip Cargo's own progress lines so only the compiler's messages remain.
+  function cleanStderr(s) {
+    return s
+      .split("\n")
+      .filter((l) => !/^\s*(Compiling playground|Finished `|Running `|Running unittests|Doc-tests playground)/.test(l))
+      .join("\n")
+      .trim();
+  }
+
+  async function execute(code, kind) {
+    const res = await fetch(`${PLAY_API}/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel: "stable",
+        mode: "debug",
+        edition: "2024",
+        crateType: kind === "bin" ? "bin" : "lib",
+        tests: kind === "test",
+        backtrace: false,
+        code,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || typeof data.success !== "boolean") {
+      throw new Error(data.error || `The Playground answered with HTTP ${res.status}.`);
+    }
+    return data;
+  }
+
+  async function runCode(fig, code) {
+    const runBtn = fig.querySelector("[data-run]");
+    let out = fig.querySelector(".run-out");
+    if (!out) {
+      out = document.createElement("div");
+      out.className = "run-out";
+      out.setAttribute("aria-live", "polite");
+      fig.appendChild(out);
+    }
+    const kind = kindOf(code);
+    out.dataset.state = "busy";
+    out.innerHTML = `<p class="run-status">${kind === "lib" ? "Compiling" : "Compiling and running"} on play.rust-lang.org…</p>`;
+    runBtn.disabled = true;
+    const started = performance.now();
+
+    try {
+      const r = await execute(code, kind);
+      const secs = ((performance.now() - started) / 1000).toFixed(1);
+      const stderr = cleanStderr(r.stderr || "");
+      const stdout = (r.stdout || "").replace(/\s+$/, "");
+      const compileFailed = !r.success && /^error(\[E\d+\])?:/m.test(stderr) && !/panicked/.test(stderr + stdout);
+      let label;
+      if (r.success) label = kind === "lib" ? "Compiled without errors" : kind === "test" ? "Tests passed" : "Finished";
+      else if (compileFailed) label = "Did not compile";
+      else if (kind === "test") label = "Tests failed";
+      else label = "Program panicked or exited with an error";
+      out.dataset.state = r.success ? "ok" : "bad";
+
+      const parts = [];
+      if (stderr) parts.push(`<div class="run-section"><p class="run-head">${compileFailed ? "Compiler" : "Standard error"}</p><pre>${highlight(stderr, "console")}</pre></div>`);
+      if (stdout) parts.push(`<div class="run-section"><p class="run-head">Output</p><pre>${highlight(stdout, "text")}</pre></div>`);
+      if (!stderr && !stdout && r.success && kind === "bin") parts.push(`<p class="run-note">The program printed nothing.</p>`);
+      if (kind === "lib" && r.success) parts.push(`<p class="run-note">This code has no <code>fn main</code>, so there is nothing to run. Add one to try it out.</p>`);
+      out.innerHTML = `<p class="run-status">${label}<span>${secs}s</span></p>${parts.join("")}`;
+    } catch (err) {
+      out.dataset.state = "offline";
+      const play = fig.querySelector("[data-play]");
+      out.innerHTML = `<p class="run-status">Couldn't reach the Rust Playground from this page</p>
+        <p class="run-note">In-page running works on your own hosted copy of the course, with an internet connection. Your code is still here, and you can <a href="${esc(play.href)}" target="_blank" rel="noopener">open it in the Playground ↗</a> instead.</p>`;
+    } finally {
+      runBtn.disabled = false;
+    }
   }
 
   // ---------------------------------------------------------- quizzes

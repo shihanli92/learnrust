@@ -8,16 +8,16 @@
 //
 // Usage: node tools/check.mjs [lesson-file-substring ...]
 
-import { readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { codeBlocks, parseInfo } from "./markdown.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 const lessonsDir = join(root, "lessons");
-const work = join(root, ".check");
-rmSync(work, { recursive: true, force: true });
-mkdirSync(work, { recursive: true });
+// A fresh temp dir per run, so parallel runs never trip over each other.
+const work = mkdtempSync(join(tmpdir(), "learnrust-check-"));
 
 const filters = process.argv.slice(2);
 const files = readdirSync(lessonsDir)

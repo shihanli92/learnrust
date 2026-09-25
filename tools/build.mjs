@@ -3,6 +3,7 @@
 // Outputs (both fully self-contained, no build step needed to view them):
 //   dist/index.html     open directly in a browser, or host anywhere (GitHub Pages etc.)
 //   dist/artifact.html  the same page without the <html>/<head> wrapper, for claude.ai Artifacts
+//   dist/_headers       response headers for Cloudflare Pages (see DEPLOY.md)
 
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -48,6 +49,7 @@ const data = JSON.stringify({ modules, lessons }).replace(/</g, "\\u003c");
 const page = read("web/template.html")
   .replace("/*STYLE*/", () => read("web/style.css"))
   .replace("/*DATA*/", () => data)
+  .replace("/*HIGHLIGHT*/", () => read("tools/highlight.mjs").replace(/^export /gm, ""))
   .replace("/*SCRIPT*/", () => read("web/app.js"));
 
 const standalone = `<!doctype html>
@@ -66,6 +68,8 @@ ${page}
 mkdirSync(join(root, "dist"), { recursive: true });
 writeFileSync(join(root, "dist/index.html"), standalone);
 writeFileSync(join(root, "dist/artifact.html"), page);
+// Cloudflare Pages headers: keep the private course out of search engines.
+writeFileSync(join(root, "dist/_headers"), "/*\n  X-Robots-Tag: noindex\n  Referrer-Policy: no-referrer\n");
 
 const kb = (s) => (Buffer.byteLength(s) / 1024).toFixed(0);
 console.log(`Built ${lessons.length} lessons in ${modules.length} modules → dist/index.html (${kb(standalone)} KB)`);

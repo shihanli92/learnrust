@@ -67,12 +67,17 @@ function renderCode(info, code, ctx) {
   const fileName = flags.find((f) => f.startsWith("file="));
   const label = fileName ? fileName.slice(5) : { rust: "Rust", toml: "TOML", console: "Terminal", text: "Output" }[lang] || lang;
 
-  const runnable = isRust && /fn main\s*\(/.test(code) && !flags.includes("ignore") && !flags.includes("norun");
+  // Rust blocks that stand on their own become editable and runnable in the page.
+  const editable = isRust && !flags.includes("ignore");
+  const kind = /#\[test\]/.test(code) ? "test" : /fn main\s*\(/.test(code) ? "bin" : "lib";
   const actions = [`<button type="button" class="code-btn" data-copy>Copy</button>`];
-  if (runnable) {
-    actions.push(`<a class="code-btn code-run" data-play target="_blank" rel="noopener" href="#">Run in Playground ↗</a>`);
+  if (editable) {
+    actions.push(`<a class="code-btn" data-play target="_blank" rel="noopener" href="https://play.rust-lang.org/">Playground ↗</a>`);
+    actions.push(`<button type="button" class="code-btn code-run" data-run>${kind === "test" ? "Run tests" : kind === "bin" ? "Run" : "Compile"}</button>`);
   }
-  return `<figure class="code code-${lang || "plain"}">
+  ctx.blockCount = (ctx.blockCount || 0) + (editable ? 1 : 0);
+  const attrs = editable ? ` data-editable data-kind="${kind}" data-block="${ctx.blockCount}"` : "";
+  return `<figure class="code code-${lang || "plain"}"${attrs}>
 <figcaption><span class="code-label">${escapeHtml(label)}</span>${badges.join("")}<span class="code-actions">${actions.join("")}</span></figcaption>
 <pre><code>${highlight(code, lang)}</code></pre>
 </figure>`;
@@ -225,7 +230,11 @@ function renderContainer(kind, arg, body, ctx) {
     const sol = solution
       ? `<details class="solution"><summary>Show a solution</summary>${render(solution, ctx)}</details>`
       : "";
-    return `<section class="exercise"><p class="exercise-kicker">Exercise ${n}</p><h3>${inline(arg || "Try it yourself")}</h3>${render(task, ctx)}${sol}</section>`;
+    // Give every exercise somewhere to type: its own starter code if it has one, else an empty program.
+    const practice = /^```rust(?!,ignore)/m.test(task)
+      ? ""
+      : renderCode("rust,file=Your answer", "fn main() {\n    // Write your answer here, then press Run.\n}", ctx);
+    return `<section class="exercise"><p class="exercise-kicker">Exercise ${n}</p><h3>${inline(arg || "Try it yourself")}</h3>${render(task, ctx)}${practice}${sol}</section>`;
   }
   if (["note", "tip", "warning"].includes(kind)) {
     const title = arg || { note: "Note", tip: "Tip", warning: "Watch out" }[kind];

@@ -2,7 +2,7 @@
 
 A private, self-paced Rust course that goes from `fn main()` to publishing your own crate.
 
-It has 25 lessons in six modules. Each lesson has runnable examples, at least one exercise with a hidden solution, and a short quiz. Progress is saved in your browser.
+It has 25 lessons in six modules. Each lesson has examples you can edit and run in the page, at least one exercise with a hidden solution, and a short quiz. Progress is saved in your browser.
 
 | Module | Lessons |
 | --- | --- |
@@ -15,9 +15,13 @@ It has 25 lessons in six modules. Each lesson has runnable examples, at least on
 
 ## Using the site
 
-Open `dist/index.html` in any browser. It is a single self-contained file, so there is no server and no install. You need an internet connection only for the web fonts and the "Run in Playground" buttons.
+Every Rust example is an editor. Change the code and press **Run** (or Ctrl+Enter), and the output appears under it. The code is compiled and run on the official [Rust Playground](https://play.rust-lang.org). Each exercise also has a box for your own answer. Your edits and progress are saved in your browser.
 
-To keep it private, don't publish the repository with GitHub Pages. Either open the file locally, or use the private claude.ai Artifact link that goes with this repo.
+There are three ways to open the course:
+
+- **Private hosted site (recommended):** [DEPLOY.md](DEPLOY.md) walks through putting it on Cloudflare Pages behind a login. It's free and takes about 10 minutes.
+- **On your computer:** open `dist/index.html` in a browser. It's a single file, with no server and no install. Run needs an internet connection.
+- **The claude.ai link:** everything works except in-page Run. That page can't contact other websites, so Run offers to open your code in the Playground instead.
 
 ## Repository layout
 
