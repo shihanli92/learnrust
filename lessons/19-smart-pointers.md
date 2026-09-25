@@ -11,7 +11,7 @@ A **smart pointer** is a struct that acts like a pointer but also *owns* the dat
 
 ## Box: a value on the heap
 
-`Box<T>` stores a value on the heap. The box itself is just a pointer-sized value on the stack, and when the box goes out of scope, the heap value is freed too.
+`Box<T>` stores a value on the heap. For an ordinary type like `Box<i32>`, the box itself is just one pointer, usually on the stack. (A `Box<dyn Trait>` or `Box<[T]>` is a two-part "fat" pointer that also carries the vtable pointer or the length, as described in the Traits lesson.) When the box goes out of scope, the heap value is freed too.
 
 ```rust
 fn main() {
@@ -174,7 +174,7 @@ dropping c
 dropping a
 ```
 
-Values are dropped in the reverse order they were created. You are not allowed to call `b.drop()` yourself, since Rust would then drop it a second time at the end of the scope. To get rid of a value early, call the `drop` function (from `std::mem`, available everywhere). It simply takes ownership of the value and lets it go out of scope.
+Local variables are dropped in the reverse order they were created, so later values, which may depend on earlier ones, go first. (The fields of a struct, by contrast, are dropped in the order they are declared.) You are not allowed to call `b.drop()` yourself, since Rust would then drop it a second time at the end of the scope. To get rid of a value early, call the `drop` function (from `std::mem`, available everywhere). It simply takes ownership of the value and lets it go out of scope.
 
 ## Rc: shared ownership
 
@@ -263,12 +263,12 @@ fn main() {
 ```
 
 ```text
-thread 'main' panicked at src/main.rs:6:23:
+thread 'main' (27031) panicked at src/main.rs:6:23:
 RefCell already borrowed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
-So `RefCell` trades a compile-time guarantee for a run-time check. Keep the guards short-lived (use them in a single expression, as in the `push` lines above) and you will rarely hit this. If you'd rather handle the conflict than panic, `try_borrow_mut()` returns a `Result` instead.
+The number in parentheses is the thread's ID, which varies between runs. So `RefCell` trades a compile-time guarantee for a run-time check. Keep the guards short-lived (use them in a single expression, as in the `push` lines above) and you will rarely hit this. If you'd rather handle the conflict than panic, `try_borrow_mut()` returns a `Result` instead.
 
 ## Rc and RefCell together
 
@@ -332,6 +332,10 @@ Notice that `pay` takes `&self`, not `&mut self`, yet it changes the balance. Th
 | Several owners who can all mutate, one thread | `Rc<RefCell<T>>` |
 | Several owners across threads | `Arc<T>`, plus `Mutex<T>` to mutate |
 
+:::note Coming from C++ or Java
+`Box` is roughly `std::unique_ptr`, but it is never null and has no moved-from state: after a move, the compiler won't let you touch the old variable. `Rc` is `std::shared_ptr` with a cheaper, non-atomic count, `Arc` is the real `shared_ptr` equivalent, and `Weak` is `weak_ptr`. `RefCell` has no direct C++ equivalent, and `Drop` is a destructor; note that Rust drops struct fields in declaration order, the opposite of C++ member destruction.
+:::
+
 :::rosalind TRIE Introduction to Pattern Matching
 Searching a genome for thousands of short patterns one at a time is slow. A **trie** (from re*trie*val, usually pronounced "try") stores all the patterns in one tree, so the search can check them together. Each edge is labelled with one base, and each pattern is spelled out by a path from the root. Patterns that start the same way share the start of their path: `GATTC` and `GATA` share the edges for `G`, `A` and `T`, then split.
 
@@ -348,7 +352,7 @@ struct Node {
 
 Without the `Box`, a `Node` would contain four more `Node`s inline, each containing four more, and so on: the same infinite-size error as the `List` above.
 
-To insert a string, start with a `&mut Node` pointing at the root and walk down one base at a time. If the slot for the base is `None`, fill it with a new boxed node (with the next label). Then move your `&mut` down into the child with `node.children[i].as_mut().unwrap()`. To print, write a recursive function that prints each edge from a node and then recurses into the child. For this sample:
+To insert a string, start with a `&mut Node` pointing at the root and walk down one base at a time. If the slot for the base is `None`, fill it with a new boxed node (with the next label), then move your `&mut` down into the child. `Option::get_or_insert_with` does both at once: it runs a closure to fill the slot only if it is empty, and returns a `&mut` to what's inside. To print, write a recursive function that prints each edge from a node and then recurses into the child. For this sample:
 
 ```text
 GATTC
@@ -409,13 +413,11 @@ impl Trie {
         let mut node = &mut self.root;
         for base in word.chars() {
             let i = base_index(base).ok_or(format!("not a DNA base: {base:?}"))?;
-            if node.children[i].is_none() {
+            // Fill the slot if it's empty, then step down into the child.
+            node = node.children[i].get_or_insert_with(|| {
                 self.node_count += 1;
-                node.children[i] = Some(Box::new(Node::new(self.node_count)));
-            }
-            // Step down into the child. `as_mut` gives an Option<&mut Box<Node>>,
-            // and `unwrap` is safe because the slot was filled just above.
-            node = node.children[i].as_mut().unwrap();
+                Box::new(Node::new(self.node_count))
+            });
         }
         Ok(())
     }
@@ -469,7 +471,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 11 12 C
 ```
 
-Node 13 is the `A` of `GATA`, created last but printed early, because the printer walks the tree depth-first and visits children in A, C, G, T order. Rosalind accepts that. `self.node_count += 1` is allowed while `node` mutably borrows `self.root` because the compiler tracks the two fields separately. When the `Trie` is dropped, each `Box` drops its node, which drops its children, so the whole tree is freed with no cleanup code.
+Node 13 is the `A` of `GATA`, created last but printed early, because the printer walks the tree depth-first and visits children in A, C, G, T order. Rosalind accepts that. The closure may change `self.node_count` while `node` mutably borrows `self.root` because the compiler tracks the two fields separately, and a closure captures only the fields it uses. When the `Trie` is dropped, each `Box` drops its node, which drops its children, so the whole tree is freed with no cleanup code.
 
 There is a popular alternative: an **arena**. Keep every node in one `Vec` and store children as indexes into it instead of boxes:
 

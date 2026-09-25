@@ -195,7 +195,7 @@ fn notify(item: &impl Summary) {
 }
 ```
 
-This is sugar for the generic version `fn notify<T: Summary>(item: &T)`. Use whichever reads better; `impl Trait` is nice for simple cases.
+This is sugar for the generic version `fn notify<T: Summary>(item: &T)`. Use whichever reads better; `impl Trait` is nice for simple cases. The one difference: the type parameter has no name, so callers can't spell it out with the turbofish (`notify::<Post>(...)` is an error).
 
 `impl Trait` in the **return** position means something slightly different: "this function returns some specific type that implements the trait, but I'm not telling you which". The caller can only use the trait's methods:
 
@@ -239,7 +239,7 @@ The standard library has several traits so mechanical that the compiler can writ
 | Trait | Gives you | Notes |
 | --- | --- | --- |
 | `Debug` | `{:?}` formatting | Derive it on almost everything. |
-| `Clone` | `.clone()`, an explicit deep copy | |
+| `Clone` | `.clone()`, an explicit copy | Deep for `String` and `Vec`; for the `Rc` of the Smart Pointers lesson, just a cheap new handle. |
 | `Copy` | Implicit copies instead of moves | Only for small types whose fields are all `Copy`; requires `Clone`. No `String` or `Vec` fields. |
 | `PartialEq`, `Eq` | `==` and `!=` | `Eq` promises that every value equals itself, which floats (`NaN`) don't satisfy. |
 | `PartialOrd`, `Ord` | `<`, `>`, sorting | Derived ordering compares fields top to bottom, or variants in declaration order. `Ord` needs `Eq`. |
@@ -301,13 +301,17 @@ struct Money {
 
 impl fmt::Display for Money {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "${}.{:02}", self.cents / 100, self.cents % 100)
+        let sign = if self.cents < 0 { "-" } else { "" };
+        let abs = self.cents.unsigned_abs(); // the size without the sign, as a u64
+        write!(f, "{sign}${}.{:02}", abs / 100, abs % 100)
     }
 }
 
 fn main() {
     let price = Money { cents: 1999 };
     println!("Price: {price}");
+    let refund = Money { cents: -1999 };
+    println!("Refund: {refund}");
     let label: String = price.to_string();
     println!("{} characters", label.len());
 }
@@ -315,8 +319,11 @@ fn main() {
 
 ```text
 Price: $19.99
+Refund: -$19.99
 6 characters
 ```
+
+The sign is handled separately because `/` and `%` on a negative number give negative results: without it, -1999 cents would print as `$-19.-99`.
 
 ## Trait objects and dynamic dispatch
 
@@ -384,7 +391,7 @@ circle with area 0.79
 total: 7.93
 ```
 
-When you call `s.area()` on a trait object, Rust doesn't know at compile time which `area` to run. The trait object carries a small hidden table of function pointers (a **vtable**) and looks the method up when called. This is **dynamic dispatch**. With generics, the compiler knows the exact type and calls the right function directly. That is **static dispatch**.
+When you call `s.area()` on a trait object, Rust doesn't know at compile time which `area` to run. So a trait object pointer is a **fat pointer**, two addresses side by side (16 bytes on a 64-bit machine): one to the value, and one to a **vtable**, a table of function pointers that the compiler builds once for each combination of type and trait (one for `Circle` as a `Shape`, one for `Square`). A call looks the method up in that table. This is **dynamic dispatch**. With generics, the compiler knows the exact type and calls the right function directly. That is **static dispatch**.
 
 | | Generics (`T: Shape`, `impl Shape`) | Trait objects (`dyn Shape`) |
 | --- | --- | --- |
@@ -394,6 +401,10 @@ When you call `s.area()` on a trait object, Rust doesn't know at compile time wh
 | Code size | One copy per type used | One copy in total |
 
 Prefer generics by default. Reach for `dyn Trait` when you need a collection of different types, or want to keep compile times and binary size down.
+
+:::note Coming from C++ or Java
+In C++ each object with virtual methods stores a hidden vptr. In Rust the value itself holds no vtable pointer; it travels in the `&dyn`/`Box<dyn>` pointer instead. That's why any type, even `i32`, can be used as a `dyn Trait`, and why values not used that way pay nothing.
+:::
 
 :::note Not every trait can be a trait object
 A trait used with `dyn` must be **dyn compatible** (formerly called "object safe"). Roughly: its methods can't be generic and can't return `Self`, because the caller wouldn't know the concrete type. The compiler tells you clearly if you hit this.
@@ -412,8 +423,8 @@ Given a DNA string in FASTA format (a single record of up to 1000 bases), print 
 
 Use traits to give the solution some structure:
 
-1. A trait `Complement` with one method, `fn complement(&self) -> Self`, implemented for both `u8` and `char`.
-2. A generic function `fn is_reverse_palindrome<T: Complement + PartialEq>(seq: &[T]) -> bool`. A sequence is a reverse palindrome when each element equals the complement of its mirror image: `seq[i] == seq[n - 1 - i].complement()` for every `i`.
+1. A trait `Complement` with one method, `fn complement(self) -> Self`, implemented for both `u8` and `char`. Taking `self` by value is fine for small `Copy` types like these, as with `Base` in the Enums lesson.
+2. A generic function `fn is_reverse_palindrome<T: Complement + PartialEq + Copy>(seq: &[T]) -> bool`. A sequence is a reverse palindrome when each element equals the complement of its mirror image: `seq[i] == seq[n - 1 - i].complement()` for every `i`. Checking the first half is enough (plus the middle element when the length is odd), because the second half repeats the same comparisons from the other end. The `Copy` bound lets `complement(self)` copy the element out of the slice.
 3. A struct `Site { position: usize, length: usize }` with a `Display` impl that prints `position length`, so `main` can just `println!("{site}")`.
 
 Check every start position and every length from 4 to 12 that fits, on the bytes of the sequence (`dna.as_bytes()`), since slicing bytes is cheap and never lands inside a character. For this sample:
@@ -444,38 +455,39 @@ use std::fmt;
 
 /// Things that have a partner on the opposite DNA strand.
 trait Complement {
-    fn complement(&self) -> Self;
+    fn complement(self) -> Self;
 }
 
 impl Complement for u8 {
-    fn complement(&self) -> u8 {
+    fn complement(self) -> u8 {
         match self {
             b'A' => b'T',
             b'T' => b'A',
             b'C' => b'G',
             b'G' => b'C',
-            other => *other,
+            other => other,
         }
     }
 }
 
 impl Complement for char {
-    fn complement(&self) -> char {
+    fn complement(self) -> char {
         match self {
             'A' => 'T',
             'T' => 'A',
             'C' => 'G',
             'G' => 'C',
-            other => *other,
+            other => other,
         }
     }
 }
 
 /// True if `seq` reads the same as its reverse complement.
 /// Works for a slice of anything that has a complement and can be compared.
-fn is_reverse_palindrome<T: Complement + PartialEq>(seq: &[T]) -> bool {
+fn is_reverse_palindrome<T: Complement + PartialEq + Copy>(seq: &[T]) -> bool {
     let n = seq.len();
-    for i in 0..n {
+    // First half, plus the middle element if n is odd (it would have to be its own complement).
+    for i in 0..(n + 1) / 2 {
         if seq[i] != seq[n - 1 - i].complement() {
             return false;
         }
@@ -553,7 +565,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 16 4
 ```
 
-`GAATTC` at position 3 is the EcoRI site from the description. `is_reverse_palindrome` never mentions bytes: it works on anything that implements `Complement` and `PartialEq`, so `is_reverse_palindrome(&['G', 'C'])` works too, and the compiler generates a separate, fast copy for each type. The `other => *other` arm leaves anything other than A, C, G and T unchanged, which keeps the `match` exhaustive without a panic. The parser here is simplified for single-record files: it keeps every line that isn't a header.
+`GAATTC` at position 3 is the EcoRI site from the description. `is_reverse_palindrome` never mentions bytes: it works on anything that implements `Complement`, `PartialEq` and `Copy`, so `is_reverse_palindrome(&['G', 'C'])` works too, and the compiler generates a separate, fast copy for each type. The `other => other` arm leaves anything other than A, C, G and T unchanged, which keeps the `match` exhaustive without a panic. The parser here is simplified for single-record files: it keeps every line that isn't a header.
 :::
 
 :::exercise Display for a FASTA record
@@ -623,8 +635,8 @@ CCGG
 ? What is the difference between `fn f(x: &impl Summary)` and `fn f<T: Summary>(x: &T)`?
 - The first uses dynamic dispatch, the second static.
 - The first only accepts types from the standard library.
-+ Nothing important; `impl Trait` in argument position is shorthand for a generic parameter.
-= Both are generic and use static dispatch. `dyn Summary` is what you'd write for dynamic dispatch.
++ Almost nothing; `impl Trait` in argument position is shorthand for a generic parameter.
+= Both are generic and use static dispatch. The only difference is that callers can't name the `impl Trait` type with the turbofish. `dyn Summary` is what you'd write for dynamic dispatch.
 
 ? You need a `Vec` holding circles, squares and user-defined shapes that you don't know in advance. What should the element type be?
 - `impl Shape`

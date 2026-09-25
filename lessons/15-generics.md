@@ -116,6 +116,12 @@ zucchini
 
 One function now works for integers, characters, floats and strings. You didn't have to say which `T` to use at each call; the compiler **infers** it from the argument. The bound is also the function's contract with its callers: pass something that isn't `PartialOrd` and you get a clear error at the call site.
 
+One caveat: `&list[0]` panics if the slice is empty, so calling `largest` on an empty slice crashes the program. A more careful version would return `Option<&T>` (`None` for an empty slice); this lesson keeps the simple version so the focus stays on generics.
+
+:::note Coming from C++ or Java
+A generic body is type-checked once, against its bounds, like a C++20 concept or a Java bounded generic (`<T extends Comparable<T>>`), not at each instantiation like a C++ template. But unlike Java's type erasure, the compiled code is monomorphized like a C++ template (see below), so `T` can be a plain `i32` with no boxing.
+:::
+
 Traits and bounds are the subject of the next lesson. For now, remember that a bare `T` lets you do almost nothing with a value except move it around, and bounds unlock more operations.
 
 ## Generic structs
@@ -304,7 +310,7 @@ the larger is kiwi
 
 ## Zero cost: monomorphization
 
-In some languages generics are slower than hand-written code, because values are boxed up and methods looked up at run time. Rust takes a different approach called **monomorphization** (from Greek: "making into one form").
+In some languages, such as Java, generic code can be slower than hand-written code, because values are boxed up and methods looked up at run time. Rust takes a different approach called **monomorphization** (from Greek: "making into one form").
 
 When the compiler sees `largest(&[1, 2, 3])` and `largest(&['a', 'b'])`, it generates a separate, specialised copy of `largest` for each type actually used, much as if you'd written `largest_i32` and `largest_char` by hand, as you did at the start of the lesson. Each copy is optimised for its type.
 
@@ -512,7 +518,7 @@ GA
 GG
 ```
 
-Here `T` is `&str`, because the symbols are slices of the input text, so each k-mer is a `Vec<&str>` such as `["T", "A"]` and `join` glues it into `"TA"`. `kmers(&['A', 'C', 'G', 'T'], 3)` would give all 64 DNA codons as `Vec<char>`s with no change to the function. `lines.next()` returns an `Option`, and `ok_or` turns a missing line into an error message that `?` can pass up from `main`.
+Here `T` is `&str`, because the symbols are slices of the input text, so each k-mer is a `Vec<&str>` such as `["T", "A"]` and `join` glues it into `"TA"`. `kmers(&['A', 'C', 'G', 'T'], 3)` would give all 64 DNA codons as `Vec<char>`s with no change to the function. Keeping every k-mer in memory is fine for the small datasets Rosalind actually hands out, but the count is the alphabet size to the power *n*, so memory use explodes quickly; for bigger inputs you would instead produce one k-mer at a time, counting through positions like a car's odometer, and print each as you go. `lines.next()` returns an `Option`, and `ok_or` turns a missing line into an error message that `?` can pass up from `main`.
 :::
 
 ```quiz

@@ -38,9 +38,13 @@ error[E0597]: `x` does not live long enough
   |                   - borrow later used here
 ```
 
-`x` is dropped at the end of the inner block, but `r` still points at it and is used afterwards. In C this would compile and read garbage memory. Rust compares the two lifetimes: the reference `r` is used for longer than the value `x` exists, so it rejects the program.
+`x` is dropped at the end of the inner block, but `r` still points at it and is used afterwards. In C or C++ this would compile, and reading `r` would be undefined behaviour: it might print garbage, crash, or seem to work. Rust compares the two lifetimes: the reference `r` is used for longer than the value `x` exists, so it rejects the program.
 
 Inside one function, the compiler can see everything and figure this out alone. The trouble starts at function boundaries.
+
+:::note Coming from C++ or Java
+A `&str` is much like a `std::string_view`, and a `&[T]` like a `std::span`: a pointer and a length into someone else's data. The difference is that the compiler checks that the view never outlives the data, so the classic dangling `string_view` bug can't compile.
+:::
 
 ## A function that needs help
 
@@ -72,7 +76,7 @@ help: consider introducing a named lifetime parameter
 
 The help line nails the problem. The function returns a reference, and a reference must point into *something*. It could be borrowed from `x` or from `y`, depending on which is longer at run time. The caller needs to know how long the result stays valid, and it can't know unless the signature says.
 
-Why not just look at the body? Because Rust checks each call using only the function's **signature**. That's a deliberate design choice: the signature is a contract, so changing a function's body can never break code that calls it, and the compiler never has to analyse your whole program at once.
+Why not just look at the body? Because Rust checks each call using only the function's **signature**. That's a deliberate design choice: the signature is a contract, so changing a function's body can't change what callers are allowed to borrow, and the compiler never has to analyse your whole program at once.
 
 ## Lifetime annotations
 
@@ -208,19 +212,21 @@ A struct holding `&str` can be faster, because it avoids copying, but every user
 
 ## Lifetime elision: why you rarely write them
 
-You've written plenty of functions that take and return references, like `fn first_word(s: &str) -> &str`, without any `'a`. That works because of **lifetime elision**: three rules the compiler applies to fill in the obvious lifetimes itself. In plain language:
+You've written plenty of functions that take and return references, like `fn first_word(s: &str) -> &str`, without any `'a`. That works because of **lifetime elision**: three rules the compiler applies to fill in the obvious lifetimes itself. They count **input lifetimes**, not parameters:
 
-1. Each reference parameter gets its own lifetime.
-2. If there is exactly one reference parameter, any references in the output borrow from it.
-3. If one of the parameters is `&self` or `&mut self` (a method), references in the output borrow from `self`.
+1. Each lifetime you leave out in the parameters becomes its own lifetime parameter. `&str` has one. `&[&str]` has two: one for the slice and one for the strings inside it. A struct with a lifetime parameter, such as `Excerpt<'_>` (`'_` means "a lifetime I'm not naming"), has one too.
+2. If there is exactly one input lifetime, every reference in the output gets it.
+3. If there are several, but one of the parameters is `&self` or `&mut self` (a method), references in the output get the lifetime of `self`.
 
-If after these rules any output lifetime is still unknown, you get error E0106 and must annotate. That's why `longest` needed help: two reference parameters, no `self`, so rule 2 and rule 3 don't apply.
+If after these rules any output lifetime is still unknown, you get error E0106 and must annotate. That's why `longest` needed help: two input lifetimes, no `self`, so rule 2 and rule 3 don't apply.
 
 | Signature as written | What the compiler reads | Annotation needed? |
 | --- | --- | --- |
 | `fn trim(s: &str) -> &str` | `fn trim<'a>(s: &'a str) -> &'a str` | No (rule 2) |
 | `fn name(&self) -> &str` | output borrows from `self` | No (rule 3) |
 | `fn pick(a: &str, b: &str) -> &str` | ambiguous | Yes |
+| `fn first(v: &[&str]) -> &str` | ambiguous: one parameter, two lifetimes | Yes |
+| `fn part(e: Excerpt<'_>) -> &str` | output borrows from the `Excerpt`'s data | No (rule 2) |
 | `fn len(a: &str, b: &str) -> usize` | no references returned | No |
 
 ## The 'static lifetime
@@ -265,9 +271,9 @@ The heart of the solution returns a slice of one of the input strings, with no c
 fn longest_common_substring<'a>(seqs: &[&'a str]) -> &'a str
 ```
 
-Here the annotation is required and does real work. The parameter contains *two* references: the outer slice `&[...]` and the `&str`s inside it. Elision can't guess which one the result borrows from, so you say it: the result lives as long as the strings (`'a`), not as long as the temporary list of them. That means the caller can drop the `Vec<&str>` and keep the answer.
+Here the annotation is required and does real work. The single parameter has *two* input lifetimes (elision rule 1): one for the outer slice `&[...]` and one for the `&str`s inside it. Elision can't guess which one the result borrows from, so you say it: the result lives as long as the strings (`'a`), not as long as the temporary list of them. That means the caller can drop the `Vec<&str>` and keep the answer.
 
-A simple approach that is fast enough:
+A simple approach that is fast enough for Rosalind's data:
 
 1. Any common substring must appear in the shortest sequence, so take substrings of that one as candidates.
 2. Try lengths 1, 2, 3 and so on. For each length, look for any candidate that every sequence `contains`.
@@ -295,22 +301,18 @@ TAGGC
 ```rust
 use std::error::Error;
 
-struct Record {
-    id: String,
-    seq: String,
-}
-
-fn parse_fasta(text: &str) -> Vec<Record> {
-    let mut records: Vec<Record> = Vec::new();
+/// The sequences of a FASTA file, with wrapped lines joined. The IDs aren't needed here.
+fn fasta_sequences(text: &str) -> Vec<String> {
+    let mut seqs: Vec<String> = Vec::new();
     for line in text.lines() {
         let line = line.trim();
-        if let Some(id) = line.strip_prefix('>') {
-            records.push(Record { id: id.to_string(), seq: String::new() });
-        } else if let Some(last) = records.last_mut() {
-            last.seq.push_str(line);
+        if line.starts_with('>') {
+            seqs.push(String::new()); // a new record starts
+        } else if let Some(last) = seqs.last_mut() {
+            last.push_str(line);
         }
     }
-    records
+    seqs
 }
 
 /// Is `motif` a substring of every sequence?
@@ -369,11 +371,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(path) => std::fs::read_to_string(path)?,
         None => SAMPLE.to_string(),
     };
-    let records = parse_fasta(&input);
+    let owned = fasta_sequences(&input);
 
     let mut seqs: Vec<&str> = Vec::new();
-    for r in &records {
-        seqs.push(&r.seq);
+    for s in &owned {
+        seqs.push(s.as_str());
     }
     println!("{}", longest_common_substring(&seqs));
     Ok(())
@@ -384,7 +386,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 TAGGC
 ```
 
-Try deleting the three `'a`s from `longest_common_substring`: you get E0106, "missing lifetime specifier", because the signature has two input lifetimes and elision rule 2 needs exactly one. Inside the function, `shortest`, `candidate` and `best` are all `&'a str` slices pointing into the records' strings, so the answer is never copied. It only becomes an owned `String` if you ask for one. Checking 100 sequences of 1000 bases this way takes well under a second.
+Try deleting the three `'a`s from `longest_common_substring`: you get E0106, "missing lifetime specifier", because the signature has two input lifetimes and elision rule 2 needs exactly one. Inside the function, `shortest`, `candidate` and `best` are all `&'a str` slices pointing into the `owned` strings, so the answer is never copied. It only becomes an owned `String` if you ask for one. On realistic data, 100 sequences of 1000 bases take well under a second. A deliberately nasty input (99 identical strings and one that shares only a long tail with them) can take tens of seconds, because the search may try hundreds of candidates at each of hundreds of lengths, checking each against every string. If you want an extension: since "a common substring of length *L* exists" is true up to the answer and false after it (step 3), you can **binary search** on the length instead of trying 1, 2, 3 in turn.
 :::
 
 :::exercise A zero-copy FASTA view
@@ -505,11 +507,11 @@ Why only single-line sequences? A `&str` must be one unbroken run of bytes. A wr
 = Lifetime annotations are purely a compile-time description. They never change when values are dropped.
 
 ? Why does `fn pick(a: &str, b: &str) -> &str` need an annotation while `fn trim(s: &str) -> &str` doesn't?
-+ With two reference parameters, the elision rules can't tell which one the output borrows from.
++ With two input lifetimes, the elision rules can't tell which one the output borrows from.
 - Functions with two parameters always need lifetimes.
 - `trim` returns a string literal.
 - `pick` might return an owned `String`.
-= Elision rule 2 only applies when there's exactly one reference parameter. With two (and no `self`), the compiler asks you to say which the result is tied to.
+= Elision rule 2 only applies when there's exactly one input lifetime. With two (and no `self`), the compiler asks you to say which the result is tied to.
 
 ? In `longest`, the caller passes one string that lives long and one that lives briefly. How long is the result usable?
 - As long as the longer-lived string.

@@ -117,6 +117,10 @@ Without `move`, the closure in `make_adder` would borrow `n`, a local variable t
 
 The return type `impl Fn(i32) -> i32` means "some type that implements the `Fn(i32) -> i32` trait". Every closure has its own unique, unnameable type, so `impl Trait` is how you return one.
 
+:::note Coming from C++ or Java
+Closures are like C++ lambdas: each has its own unique type, but Rust infers the capture mode instead of making you write `[&]` or `[=]`, and `move` means capture everything by value (moving it in). A `Box<dyn Fn(i32) -> i32>` plays the role of `std::function` or a Java functional interface when you need to store different closures in one place.
+:::
+
 ## Fn, FnMut and FnOnce
 
 Every closure automatically implements one or more of three traits, depending on what it does with its captured values. These traits are how functions describe the kind of closure they accept.
@@ -171,7 +175,7 @@ consumed
 [2, 4, 6]
 ```
 
-The last line shows that a plain function name can be passed wherever a closure is expected, as long as the signature matches. The two spellings `F: FnMut()` with a generic and `impl Fn(i32) -> i32` in argument position mean the same thing; use whichever reads better.
+The last line shows that a plain function name can be passed wherever a closure is expected, as long as the signature matches. As in the Traits lesson, a generic with a bound and `impl Trait` in argument position are two spellings of the same thing: `fn transform<F: Fn(i32) -> i32>(values: &[i32], f: F)` and the `f: impl Fn(i32) -> i32` above accept exactly the same closures. Use whichever reads better.
 
 ## The Iterator trait
 
@@ -264,6 +268,10 @@ Adapters are **lazy**: building a chain does no work at all. Nothing happens unt
 warning: unused `Map` that must be used
  = note: iterators are lazy and do nothing unless consumed
 ```
+
+:::note Coming from C++ or Java
+Iterator chains are lazy like Java Streams or C++20 ranges, and with optimisations on they usually compile to the same code as a hand-written loop. Unlike a C++ begin/end pair, a Rust iterator is one object with a `next` method that knows when it is finished.
+:::
 
 Here is a chain that reads almost like a sentence:
 
