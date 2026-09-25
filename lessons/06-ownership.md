@@ -311,100 +311,113 @@ Each value is dropped exactly once, at the end of its owner's scope. `c` was mov
 
 This pattern, tying cleanup to the owner's scope, works for more than memory. Files close and network connections shut when their owners go out of scope, so you can't forget to release them.
 
-:::exercise Make the announcement twice
-This program fails with E0382. Fix it in two different ways: first by cloning, then by changing `announce` so it gives the string back.
+:::exercise Report twice
+This program fails with E0382. Fix it in two different ways: first by cloning, then by changing `report` so it gives the string back.
 
 ```rust,compile_fail
-fn announce(message: String) {
-    println!("Announcement: {message}");
+fn report(dna: String) {
+    println!("{dna} has {} bases", dna.len());
 }
 
 fn main() {
-    let message = String::from("The train is late");
-    announce(message);
-    announce(message);
+    let dna = String::from("GATTACA");
+    report(dna);
+    report(dna);
 }
 ```
 :::solution
 Fix 1: pass a clone the first time, so `main` keeps its own copy:
 
 ```rust
-fn announce(message: String) {
-    println!("Announcement: {message}");
+fn report(dna: String) {
+    println!("{dna} has {} bases", dna.len());
 }
 
 fn main() {
-    let message = String::from("The train is late");
-    announce(message.clone());
-    announce(message);
+    let dna = String::from("GATTACA");
+    report(dna.clone());
+    report(dna);
 }
 ```
 
-Fix 2: have `announce` return ownership:
+Fix 2: have `report` return ownership:
 
 ```rust
-fn announce(message: String) -> String {
-    println!("Announcement: {message}");
-    message
+fn report(dna: String) -> String {
+    println!("{dna} has {} bases", dna.len());
+    dna
 }
 
 fn main() {
-    let message = String::from("The train is late");
-    let message = announce(message);
-    announce(message);
+    let dna = String::from("GATTACA");
+    let dna = report(dna);
+    report(dna);
 }
 ```
 
 Both print:
 
 ```text
-Announcement: The train is late
-Announcement: The train is late
+GATTACA has 7 bases
+GATTACA has 7 bases
 ```
 
-The next lesson shows the tidiest fix of all: let `announce` borrow the string.
+The next lesson shows the tidiest fix of all: let `report` borrow the string.
 :::
 
-:::exercise Copy or move?
-Before running this program, decide for each of `a`, `b`, `c` and `d` whether it is still usable on the last line. Then add a `println!` that prints the ones you think are valid and check with the compiler.
+:::rosalind RNA Transcribing DNA into RNA
+**The biology.** To use a gene, a cell first copies it from DNA into RNA, a step called **transcription**. The RNA copy has the same sequence, except that every `T` (thymine) becomes a `U` (uracil).
 
-```rust
-fn main() {
-    let a = 10;
-    let b = (1, true);
-    let c = String::from("hi");
-    let d = [1.5, 2.5];
+**The task.** The input is one DNA string (up to 1000 letters). Print the RNA string you get by replacing every `T` with `U`. For example, `GATTACAGGCTAACGT` becomes `GAUUACAGGCUAACGU`.
 
-    let a2 = a;
-    let b2 = b;
-    let c2 = c;
-    let d2 = d;
-    println!("{a2} {b2:?} {c2} {d2:?}");
-}
-```
+Write a function `fn transcribe(dna: String) -> String` that takes ownership of the DNA and returns a brand-new `String` holding the RNA. Two things you haven't seen yet will help:
+
+- `String::new()` creates an empty `String`. Declare it `mut` so you can add to it.
+- `rna.push(c)` appends a single `char` to the end, much as `push_str` appends text.
+
+Loop over `dna.chars()` as in the previous lesson, pushing either `'U'` or the base itself. Start `main` with `let dna = String::from("...".trim());`, pasting your dataset between the quotes.
 :::solution
-`a` (an integer), `b` (a tuple of Copy types) and `d` (an array of floats) are all `Copy`, so they were copied and are still valid. `c` is a `String`, so it was moved into `c2` and can no longer be used.
-
 ```rust
-fn main() {
-    let a = 10;
-    let b = (1, true);
-    let c = String::from("hi");
-    let d = [1.5, 2.5];
+fn transcribe(dna: String) -> String {
+    let mut rna = String::new();
+    for base in dna.chars() {
+        if base == 'T' {
+            rna.push('U');
+        } else {
+            rna.push(base);
+        }
+    }
+    rna // ownership of the new String moves out to the caller
+} // `dna` goes out of scope here and its memory is freed
 
-    let a2 = a;
-    let b2 = b;
-    let c2 = c;
-    let d2 = d;
-    println!("{a2} {b2:?} {c2} {d2:?}");
-    println!("{a} {b:?} {d:?}"); // `c` would not compile here
+fn main() {
+    let dna = String::from("GATTACAGGCTAACGT".trim()); // paste your dataset
+    let rna = transcribe(dna);
+    println!("{rna}");
 }
 ```
 
 ```text
-10 (1, true) hi [1.5, 2.5]
-10 (1, true) [1.5, 2.5]
+GAUUACAGGCUAACGU
 ```
+
+Follow the ownership: `dna` moves into `transcribe`, which builds `rna`, moves it back out to `main`, and drops the DNA when it finishes. After the call, `main` can't use `dna` any more, and doesn't need to.
+
+**The one-liner.** Strings have a `replace` method that does the whole job and returns a new `String`:
+
+```rust
+fn main() {
+    let dna = String::from("GATTACAGGCTAACGT".trim()); // paste your dataset
+    let rna = dna.replace('T', "U"); // `dna` is still usable after this line
+    println!("{rna}");
+}
+```
+
+```text
+GAUUACAGGCUAACGU
+```
+
+Notice that `replace` did *not* take ownership: you could still print `dna` afterwards. That is because `replace` only needs to read the text, so it borrows it instead. Borrowing is exactly what the next lesson is about.
 :::
 
 ```quiz

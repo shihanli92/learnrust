@@ -2,12 +2,12 @@
 title: Hello, Cargo
 module: Getting started
 summary: Install the Rust toolchain, create your first project with Cargo and learn the edit–compile–run loop.
-minutes: 20
+minutes: 25
 ---
 
 Rust is a systems programming language that promises three things at once: programs that run as fast as C or C++, memory safety without a garbage collector, and a compiler that catches whole classes of bugs before your code ever runs. The price is a stricter compiler. Most of this course is about learning to work *with* that compiler instead of fighting it.
 
-By the end of the course you will have built and published a small library crate (Rust's word for a package) that other people can depend on.
+By the end of the course you will have built and published a small library crate (Rust's word for a package) that other people can depend on: `dnakit`, a toolkit for working with DNA, RNA and protein sequences. Along the way, most exercises are real bioinformatics problems from the Rosalind site, so every new Rust feature gets put to work on actual data.
 
 ## Install the toolchain
 
@@ -139,16 +139,45 @@ Read errors from the top. The first line says *what* went wrong, the `-->` line 
 Run `cargo fmt` to format your code the standard way, and `cargo clippy` for extra advice on writing idiomatic Rust. Both come with rustup.
 :::
 
+## Practising with Rosalind
+
+[Rosalind](https://rosalind.info) is a free website of bioinformatics puzzles: small programming problems about DNA, RNA and proteins. From the next lesson on, most exercises in this course are Rosalind problems. Each one practises the Rust you have just learned, and you can check your answer against Rosalind's own judge.
+
+To take part, create a free account on the site (an email address is all it takes). The problems we use come from its **Bioinformatics Stronghold** section. Each Rosalind exercise in this course links to its problem page.
+
+Solving a problem works like this:
+
+1. Read the problem page and write a program that solves it. The course gives you a small sample to test with.
+2. Click **Download dataset**. You get a text file of input made just for you, and a **5-minute timer** starts.
+3. Run your program on that input and submit its output on the problem page before the timer runs out.
+4. If the answer is wrong or time runs out, nothing is lost: download a fresh dataset and try again.
+
+Five minutes is plenty if your program already works, so get it right on the sample first, then download. In the early lessons you will paste the dataset straight into your program as text. Once you have learned to read files, your programs will open the downloaded file directly.
+
+### Biology in one minute
+
+You don't need to be a biologist; each exercise explains the little biology it needs. Here is the core. **DNA** is a long chain of four building blocks called nucleotides, written as the letters `A`, `C`, `G` and `T`, so a piece of DNA is simply a string such as `"GATTACA"`. DNA is double-stranded, and the two strands pair up letter by letter: `A` always sits opposite `T`, and `C` opposite `G`. **RNA** is a working copy of DNA that uses the same alphabet, except that `U` takes the place of `T`. A cell reads RNA three letters at a time; each three-letter **codon** stands for one amino acid, or for "stop". A **protein** is a chain of amino acids, and biologists write it as a string too, one letter per amino acid, such as `"MKWVTFISLL"`.
+
+That is enough to start: to a programmer, most of bioinformatics is careful work with strings.
+
 :::exercise Make it yours
-Change the program so it prints two lines: a greeting with your name in it, and the result of multiplying 6 by 7. Use at least one named placeholder such as `{name}`.
+Change the program so it prints two lines: a greeting with your name in it, and the length of a short DNA string such as `"GATTACA"`. Use at least one named placeholder such as `{name}`. To get the length, call `.len()` on the string, as in `dna.len()`.
 :::solution
 ```rust
 fn main() {
     let name = "Ferris";
+    let dna = "GATTACA";
     println!("Hello, {name}!");
-    println!("6 × 7 = {}", 6 * 7);
+    println!("The DNA string {dna} is {} letters long.", dna.len());
 }
 ```
+
+```text
+Hello, Ferris!
+The DNA string GATTACA is 7 letters long.
+```
+
+`.len()` is a **method**: a function that belongs to a value and is called with a dot. You will meet many more of them.
 :::
 
 ```quiz

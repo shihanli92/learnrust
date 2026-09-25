@@ -208,21 +208,21 @@ An **array** holds a fixed number of values that all have the *same* type. Its t
 
 ```rust
 fn main() {
-    let days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-    let scores: [i32; 3] = [90, 72, 85];
+    let bases = ['A', 'C', 'G', 'T'];
+    let counts: [u32; 4] = [20, 12, 17, 21]; // how many of each base a DNA string has
     let zeros = [0; 4]; // four zeros
 
-    println!("First day: {}", days[0]);
-    println!("There are {} days", days.len());
-    println!("Total score: {}", scores[0] + scores[1] + scores[2]);
+    println!("First base: {}", bases[0]);
+    println!("There are {} bases", bases.len());
+    println!("G and C together: {}", counts[1] + counts[2]);
     println!("{:?}", zeros);
 }
 ```
 
 ```text
-First day: Mon
-There are 5 days
-Total score: 247
+First base: A
+There are 4 bases
+G and C together: 29
 [0, 0, 0, 0]
 ```
 
@@ -316,49 +316,68 @@ fn main() {
 
 `parse` can fail, for example on the text `"hello"`, so it returns a result that is either the number or an error. `.unwrap()` means "give me the number, or panic if it went wrong". That is fine for small experiments; you will learn to handle errors properly in the error-handling lessons.
 
-:::exercise Temperature table
-Store three temperatures in Celsius in an array of `f64`: `[-5.0, 18.5, 30.0]`. Convert each one to Fahrenheit (multiply by 9, divide by 5, add 32) and print the result. Then store your favourite city and its temperature in a tuple, destructure it, and print a sentence using both parts.
-:::solution
+## Printing floats with fixed decimals
+
+One last formatting trick before the exercise. `{:.3}` prints a float rounded to three decimal places (any number works in place of 3), and it combines with names as `{x:.3}`:
+
 ```rust
 fn main() {
-    let celsius = [-5.0, 18.5, 30.0];
-    println!("{} °F", celsius[0] * 9.0 / 5.0 + 32.0);
-    println!("{} °F", celsius[1] * 9.0 / 5.0 + 32.0);
-    println!("{} °F", celsius[2] * 9.0 / 5.0 + 32.0);
-
-    let city = ("Lisbon", 22.5);
-    let (name, temp) = city;
-    println!("It is {temp} °C in {name}.");
+    let gc_fraction = 29.0 / 70.0;
+    println!("{gc_fraction}");
+    println!("{gc_fraction:.3}");
+    println!("{:.1}%", gc_fraction * 100.0);
 }
 ```
 
 ```text
-23 °F
-65.3 °F
-86 °F
-It is 22.5 °C in Lisbon.
+0.4142857142857143
+0.414
+41.4%
 ```
 
-The literals are written `9.0` and `5.0` rather than `9` and `5` because Rust will not multiply a float by an integer.
-:::
+:::rosalind IPRB Mendel's First Law
+**The biology.** A gene often comes in two versions (alleles): a dominant `A` and a recessive `a`. Each organism carries two copies, so it is `AA` (homozygous dominant), `Aa` (heterozygous) or `aa` (homozygous recessive). A child inherits one copy from each parent, each parent passing on either of its two copies with equal chance. The child shows the dominant trait unless it ends up `aa`.
 
-:::exercise Average score
-Given `let scores: [u32; 4] = [72, 95, 88, 61];`, compute the average as an `f64` and print it. You will need `as` somewhere.
+**The task.** A population has `k` organisms that are `AA`, `m` that are `Aa` and `n` that are `aa`. Two *different* organisms are picked at random and mate. Print the probability that their child has at least one `A`. The input is the three whole numbers `k m n`; Rosalind expects one decimal number, and answers within 0.001 of the exact value are accepted.
+
+For example, `1 2 3` gives about `0.58333`.
+
+It is easiest to work out the chance of the opposite, an `aa` child, and subtract it from 1. Think of the picks in order: the first organism is chosen from all `t = k + m + n`, the second from the remaining `t - 1`. So there are `t · (t - 1)` ordered pairs, all equally likely. An `aa` child needs both parents to pass on `a`:
+
+| Parents | Ordered pairs | Chance of an `aa` child |
+| --- | --- | --- |
+| `aa` and `aa` | `n · (n - 1)` | 1 |
+| `Aa` and `aa`, either order | `2 · m · n` | 1/2 |
+| `Aa` and `Aa` | `m · (m - 1)` | 1/4 |
+
+Any pair that includes an `AA` parent always has a dominant child. Hold the three counts in a tuple, convert them to `f64` before dividing, and print the answer with five decimals.
 :::solution
 ```rust
 fn main() {
-    let scores: [u32; 4] = [72, 95, 88, 61];
-    let total = scores[0] + scores[1] + scores[2] + scores[3];
-    let average = total as f64 / scores.len() as f64;
-    println!("Average: {average}");
+    // Paste your dataset's three numbers here: k (AA), m (Aa), n (aa).
+    let (k, m, n): (u32, u32, u32) = (1, 2, 3);
+
+    // Convert once, up front, so every calculation below is in floating point.
+    let k = k as f64;
+    let m = m as f64;
+    let n = n as f64;
+    let total = k + m + n;
+
+    let pairs = total * (total - 1.0);
+    let recessive = n * (n - 1.0) * 1.0 + 2.0 * m * n * 0.5 + m * (m - 1.0) * 0.25;
+
+    let dominant = 1.0 - recessive / pairs;
+    println!("{dominant:.5}");
 }
 ```
 
 ```text
-Average: 79
+0.58333
 ```
 
-Both the total and the length are converted to `f64` before dividing. If you divided the integers first, you would lose the fractional part of the result.
+The conversion is the careful part. If you kept the counts as integers, `recessive / pairs` would be an integer division, and a result such as 12 / 30 would come out as 0. You also can't write `0.25 * m` while `m` is a `u32`: Rust refuses to mix the two types. Converting all three counts with `as` at the start, and shadowing the old names, keeps the rest of the code simple. Going from `u32` to `f64` never loses information, so `as` is safe here.
+
+In the example, `total` is 6, so there are 30 ordered pairs, and the `aa`-producing weight is 6 + 6 + 0.5 = 12.5. That leaves 1 - 12.5 / 30 = 0.58333.
 :::
 
 ```quiz

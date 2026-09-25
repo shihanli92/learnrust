@@ -2,7 +2,7 @@
 title: Variables and Mutability
 module: Getting started
 summary: Declare variables with let, see why they are immutable by default, and learn when to reach for mut, constants and shadowing.
-minutes: 25
+minutes: 30
 ---
 
 Every program needs to hold on to values: a user's name, a running total, the current level in a game. In Rust you give a value a name with `let`. That part looks like most other languages. What is different is the default: once you give a name a value, Rust assumes it will not change unless you say otherwise.
@@ -15,21 +15,21 @@ A `let` statement binds a value to a name:
 
 ```rust
 fn main() {
-    let apples = 5;
-    let cents_per_apple = 40;
-    let weight_kg = 1.2;
-    let fruit = "apple";
-    println!("{apples} {fruit}s weigh {weight_kg} kg and cost {} cents.", apples * cents_per_apple);
+    let genes = 3;
+    let bases_per_gene = 1200;
+    let gc_fraction = 0.42;
+    let organism = "yeast";
+    println!("{genes} {organism} genes hold {} bases, and {gc_fraction} of them are G or C.", genes * bases_per_gene);
 }
 ```
 
 ```text
-5 apples weigh 1.2 kg and cost 200 cents.
+3 yeast genes hold 3600 bases, and 0.42 of them are G or C.
 ```
 
 Variable names use `snake_case`: lowercase words joined by underscores. The compiler will warn you if you write `centsPerApple` instead.
 
-Notice that none of the variables above say what *type* they are. Rust figured out that `apples` is an integer, `weight_kg` is a number with a decimal point and `fruit` is text. This is called **type inference**, and you will see more of it at the end of this lesson.
+Notice that none of the variables above say what *type* they are. Rust figured out that `genes` is an integer, `gc_fraction` is a number with a decimal point and `organism` is text. This is called **type inference**, and you will see more of it at the end of this lesson.
 
 ## Immutable by default
 
@@ -247,16 +247,18 @@ Still working on the weather report...
 
 A lone `_` is special: it is not a name at all, just a placeholder meaning "I don't need this value". You will see it in patterns and loops in later lessons.
 
+Rosalind datasets are small in these early lessons, so you can type or paste the numbers straight into your program as `let` bindings. The exercises below work that way.
+
 :::exercise Fix the counter
-This program does not compile. Fix it with the smallest possible change, then run it.
+This program counts G bases by hand, but it does not compile. Fix it with the smallest possible change, then run it.
 
 ```rust,compile_fail
 fn main() {
-    let laps = 0;
-    laps += 1;
-    laps += 1;
-    laps += 1;
-    println!("You ran {laps} laps.");
+    let g_count = 0;
+    g_count += 1;
+    g_count += 1;
+    g_count += 1;
+    println!("Found {g_count} G bases.");
 }
 ```
 :::solution
@@ -264,40 +266,62 @@ The variable changes, so it needs `mut`:
 
 ```rust
 fn main() {
-    let mut laps = 0;
-    laps += 1;
-    laps += 1;
-    laps += 1;
-    println!("You ran {laps} laps.");
+    let mut g_count = 0;
+    g_count += 1;
+    g_count += 1;
+    g_count += 1;
+    println!("Found {g_count} G bases.");
 }
 ```
 
 ```text
-You ran 3 laps.
+Found 3 G bases.
 ```
 :::
 
-:::exercise Shadow in steps
-Start with `let word = "ferris";`. Using shadowing (no `mut`), turn `word` into its length, then into double that length, and print the final value. Then add a constant `BONUS: usize = 100` and print the length plus the bonus.
+:::rosalind IEV Calculating Expected Offspring
+**The biology.** Most genes come in two versions, called alleles: a *dominant* one written `A` and a *recessive* one written `a`. Every animal carries two copies, so it is `AA`, `Aa` or `aa`, and a child gets one copy from each parent, picked at random. The child shows the dominant trait (the dominant *phenotype*) if it has at least one `A`.
+
+That gives a fixed chance of a dominant-looking child for each kind of couple:
+
+| Couple | Chance a child shows the dominant trait |
+| --- | --- |
+| `AA` with `AA` | 1 |
+| `AA` with `Aa` | 1 |
+| `AA` with `aa` | 1 |
+| `Aa` with `Aa` | 0.75 |
+| `Aa` with `aa` | 0.5 |
+| `aa` with `aa` | 0 |
+
+**The task.** You are given six whole numbers: how many couples there are of each kind, in the order of the table. Every couple has exactly two children. Print the *expected* number of children with the dominant trait: for each kind of couple, multiply the number of couples by 2 children by the chance, then add up all six results. Rosalind expects a single number; decimals are fine.
+
+For example, the counts `2 1 0 3 1 2` give 11.5 (that is 2·(2 + 1 + 0) + 2·0.75·3 + 2·0.5·1).
+
+Store each count in its own `let` binding, and the number of children per couple in a `const`. Write the counts with `.0` on the end, such as `3.0`, so they are `f64` values: Rust will not multiply a whole number by a decimal like `0.75`, and the next lesson shows how to convert between the two.
 :::solution
 ```rust
-const BONUS: usize = 100;
+const CHILDREN_PER_COUPLE: f64 = 2.0;
 
 fn main() {
-    let word = "ferris";
-    let word = word.len();
-    let word = word * 2;
-    println!("Doubled length: {word}");
-    println!("With bonus: {}", word + BONUS);
+    // Paste your dataset's six numbers here, adding .0 to each one.
+    let dom_dom = 2.0; // AA with AA
+    let dom_het = 1.0; // AA with Aa
+    let dom_rec = 0.0; // AA with aa
+    let het_het = 3.0; // Aa with Aa
+    let het_rec = 1.0; // Aa with aa
+    let rec_rec = 2.0; // aa with aa
+
+    let expected = CHILDREN_PER_COUPLE
+        * (dom_dom * 1.0 + dom_het * 1.0 + dom_rec * 1.0 + het_het * 0.75 + het_rec * 0.5 + rec_rec * 0.0);
+    println!("{expected}");
 }
 ```
 
 ```text
-Doubled length: 12
-With bonus: 112
+11.5
 ```
 
-`len()` returns a `usize`, which is why the constant is declared as `usize` too. Rust does not mix number types automatically; the next lesson explains why.
+The variable names can't use capital letters to tell `AA` from `Aa` (Rust names are `snake_case`), so they spell out the genotypes: `dom` for `AA`, `het` for `Aa` (heterozygous: one of each) and `rec` for `aa`. Multiplying by `1.0` and `0.0` looks redundant, but it keeps the code a direct copy of the table, which makes it easy to check. Every binding is plain `let`, because none of them ever changes.
 :::
 
 ```quiz

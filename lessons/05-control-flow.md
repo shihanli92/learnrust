@@ -2,7 +2,7 @@
 title: Control Flow
 module: Getting started
 summary: Make decisions with if and repeat work with loop, while and for, including loops that return values and loop labels.
-minutes: 30
+minutes: 40
 ---
 
 A program that runs every line exactly once, top to bottom, can't do much. **Control flow** lets your code choose between paths and repeat work. Rust has one way to choose, `if`, and three ways to loop: `loop`, `while` and `for`.
@@ -215,29 +215,29 @@ You can loop over an array directly, without indexes:
 
 ```rust
 fn main() {
-    let planets = ["Mercury", "Venus", "Earth"];
+    let codons = ["ATG", "GCC", "TAA"];
 
-    for planet in planets {
-        println!("Hello, {planet}!");
+    for codon in codons {
+        println!("Reading {codon}");
     }
 
     // Need the position too? .iter().enumerate() gives (index, item) pairs.
-    for (i, planet) in planets.iter().enumerate() {
-        println!("Planet {} is {planet}", i + 1);
+    for (i, codon) in codons.iter().enumerate() {
+        println!("Codon {} is {codon}", i + 1);
     }
 }
 ```
 
 ```text
-Hello, Mercury!
-Hello, Venus!
-Hello, Earth!
-Planet 1 is Mercury
-Planet 2 is Venus
-Planet 3 is Earth
+Reading ATG
+Reading GCC
+Reading TAA
+Codon 1 is ATG
+Codon 2 is GCC
+Codon 3 is TAA
 ```
 
-Prefer this style to `for i in 0..planets.len()` followed by `planets[i]`. It is shorter, it can't go out of bounds, and it keeps working if the array changes length. You will learn much more about `.iter()` and friends in the iterators lesson.
+Prefer this style to `for i in 0..codons.len()` followed by `codons[i]`. It is shorter, it can't go out of bounds, and it keeps working if the array changes length. You will learn much more about `.iter()` and friends in the iterators lesson.
 
 :::tip Which loop should I use?
 Reach for `for` when you are going through a sequence or a range. Use `while` when you loop until a condition changes. Use `loop` when the exit is somewhere in the middle, or when the loop needs to produce a value.
@@ -334,51 +334,135 @@ FizzBuzz
 
 The order of the checks matters. If `n % 3 == 0` came first, 15 would print "Fizz", because only the first true branch runs.
 
-:::exercise Sum of multiples
-Add up all the numbers from 1 to 100 (inclusive) that are divisible by 3 or by 7, and print the total. Use a `for` loop, a `mut` accumulator and `||`.
-:::solution
+## Looping over the letters of a string
+
+One more kind of sequence is especially useful for the exercises: the characters of a string. Calling `.chars()` on a string gives you its characters one at a time, as `char` values, so a `for` loop can visit every letter of a DNA sequence:
+
 ```rust
 fn main() {
-    let mut total = 0;
-    for n in 1..=100 {
-        if n % 3 == 0 || n % 7 == 0 {
-            total += n;
+    let dna = "GATTACA";
+    let mut t_count = 0;
+
+    for base in dna.chars() {
+        if base == 'T' {
+            t_count += 1;
         }
     }
-    println!("Total: {total}");
+
+    println!("{dna} contains {t_count} T bases");
 }
 ```
 
 ```text
-Total: 2208
+GATTACA contains 2 T bases
 ```
-:::
 
-:::exercise Collatz steps
-Start with `let mut n: u64 = 27;`. Repeat: if `n` is even, halve it; otherwise set it to `3 * n + 1`. Stop when `n` reaches 1. Use `loop` with `break` to return the number of steps it took, store it in a variable, and print it.
+Note the single quotes in `'T'`: `base` is a `char`, so it is compared with a `char`, not with the string `"T"`. Lesson 08 explains how strings store their characters and why `.chars()` is the right way to walk through them.
+
+:::rosalind DNA Counting DNA Nucleotides
+**The biology.** DNA is written with four letters, one for each kind of nucleotide: `A`, `C`, `G` and `T`. Counting how often each one appears is often the very first thing a biologist does with a new sequence.
+
+**The task.** The input is one DNA string (up to 1000 letters). Print four whole numbers separated by single spaces: how many times `A`, `C`, `G` and `T` occur, in that order. For example, `GATTACAGGCTAACGT` gives `5 3 4 4`.
+
+To get the dataset into your program, open the downloaded file, copy its contents and paste them between the quotes of a string literal. The file ends with a newline, and if you paste that too it becomes part of the string. Calling `.trim()` on the string removes spaces and newlines from both ends:
+
+```rust
+fn main() {
+    let dna = "GATTACAGGCTAACGT"; // paste your dataset between the quotes
+    let dna = dna.trim();       // drop a pasted newline, if any
+    println!("{dna} has {} letters", dna.len());
+}
+```
+
+Use one `mut` counter per base and an `if` / `else if` chain inside a `for` loop over `dna.chars()`.
 :::solution
 ```rust
 fn main() {
-    let mut n: u64 = 27;
-    let mut steps = 0;
+    let dna = "GATTACAGGCTAACGT"; // paste your dataset between the quotes
+    let dna = dna.trim();
 
-    let total_steps = loop {
-        if n == 1 {
-            break steps;
+    let mut a = 0;
+    let mut c = 0;
+    let mut g = 0;
+    let mut t = 0;
+
+    for base in dna.chars() {
+        if base == 'A' {
+            a += 1;
+        } else if base == 'C' {
+            c += 1;
+        } else if base == 'G' {
+            g += 1;
+        } else if base == 'T' {
+            t += 1;
         }
-        n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 };
-        steps += 1;
-    };
+    }
 
-    println!("27 reaches 1 after {total_steps} steps");
+    println!("{a} {c} {g} {t}");
 }
 ```
 
 ```text
-27 reaches 1 after 111 steps
+5 3 4 4
 ```
 
-Notice the `if` expression on the right of `n = ...`: both branches produce a `u64`, so it can be assigned directly.
+The last branch is `else if base == 'T'` rather than a plain `else`, so any stray character (such as a space inside the string) is ignored instead of being counted as a `T`. In lesson 11 you will meet `match`, which expresses a choice like this even more neatly.
+:::
+
+:::rosalind FIBD Mortal Fibonacci Rabbits
+**The story.** This is the rabbit problem from the functions lesson, but now rabbits are mortal. Each pair lives for exactly `m` months. As before, a newborn pair takes a month to grow up, and every adult pair then produces one new pair each month (so `k` is 1). In the month a pair reaches age `m`, it has died.
+
+**The task.** The input is two numbers, `n` (at most 100) and `m` (at most 20). You start with one newborn pair in month 1. Print the number of rabbit pairs alive after `n` months, as a single whole number. For example, `n = 10` and `m = 4` give 28.
+
+The neat way to model this is to track how many pairs there are of each age. Keep an array where `ages[0]` is the number of newborn pairs, `ages[1]` the number of one-month-old pairs, and so on up to `ages[m - 1]`. Each month:
+
+1. The babies born this month are all the pairs aged 1 or more, so add up `ages[1]` to `ages[m - 1]`.
+2. Everyone gets one month older: move each count up one slot, starting from the top, so `ages[m - 1]` takes the old `ages[m - 2]`, and so on. The old `ages[m - 1]` is overwritten: those pairs have died.
+3. Put the new babies in `ages[0]`.
+
+After the last month, add up the whole array. An array's length is part of its type and must be known when the program is compiled, so make it 20 long (the largest `m`) and only use the first `m` slots. Array indexes are `usize`, so make `m` a `usize` too.
+
+Use `u128` for the counts. Try `u64` first and see what happens with `n = 100` and `m = 20`.
+:::solution
+```rust
+fn main() {
+    let n = 10;        // paste n from your dataset
+    let m: usize = 4;  // paste m from your dataset
+
+    // ages[i] = number of pairs that are i months old.
+    let mut ages: [u128; 20] = [0; 20];
+    ages[0] = 1; // month 1: one newborn pair
+
+    for _ in 2..=n {
+        // 1. Every pair aged 1 month or more has one pair of babies.
+        let mut babies = 0;
+        for age in 1..m {
+            babies += ages[age];
+        }
+        // 2. Everyone ages by a month. Go from the top down so nothing is
+        //    overwritten before it has been moved. The oldest pairs fall off.
+        for age in (1..m).rev() {
+            ages[age] = ages[age - 1];
+        }
+        // 3. The babies are the new youngest group.
+        ages[0] = babies;
+    }
+
+    let mut total = 0;
+    for age in 0..m {
+        total += ages[age];
+    }
+    println!("{total}");
+}
+```
+
+```text
+28
+```
+
+This is one of the rare cases where looping over indexes (`for age in 1..m`) is the right call: the program works with *positions* in the array, reading one slot and writing its neighbour.
+
+**Why `u128`?** Rabbits living 20 months die so late that the numbers grow almost like the ordinary Fibonacci numbers, and after 100 months there are about 3.5 × 10²⁰ pairs. The biggest `u64` is about 1.8 × 10¹⁹, twenty times too small: in a debug build the program would panic with "attempt to add with overflow". A `u128` holds numbers up to about 3.4 × 10³⁸, plenty for this problem.
 :::
 
 ```quiz

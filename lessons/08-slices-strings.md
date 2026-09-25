@@ -183,7 +183,7 @@ good
 world
 ```
 
-A `&str` parameter accepts more kinds of input. Passing `&owned` works because Rust automatically converts a `&String` into a `&str` when a function asks for one. (This is called **deref coercion**, and it is what made `push_str(name)` work in the last lesson's exercise.) The reverse is not true: a function that demands `&String` cannot take a literal.
+A `&str` parameter accepts more kinds of input. Passing `&owned` works because Rust automatically converts a `&String` into a `&str` when a function asks for one. (This is called **deref coercion**. It is also why `push_str` and other methods that expect a `&str` happily accept a `&String`.) The reverse is not true: a function that demands `&String` cannot take a literal.
 
 The rule of thumb: take `&str` when you only need to read text, and use `String` when you need to own or build it.
 
@@ -280,6 +280,8 @@ byte index 1 is not a char boundary; it is inside 'З' (bytes 0..2) of `Здра
 Code like `&name[..3]` works on every test string you try in English, then crashes on the first name with an accent. Only slice at positions you have found by searching the string, never at positions you assume.
 :::
 
+DNA, RNA and protein strings are the happy exception. They only ever contain plain ASCII capital letters, one byte each, so for a sequence `len()` is exactly the number of letters and every byte position is a character boundary. That is why bioinformatics code slices sequences by position all the time, as you will in the exercises below. Just remember that the guarantee comes from the data, not from Rust.
+
 ## Common String methods
 
 Here are the methods you will reach for most often. Methods that only read text work on `&str`, so they work on a `String` too.
@@ -347,81 +349,78 @@ The `+` operator deserves a closer look. `first + "-"` takes ownership of `first
 Methods such as `trim` and the pieces from `split_whitespace` return `&str` slices into the original text, which is cheap. Methods that must produce different text, such as `replace` and `to_uppercase`, return a new `String`.
 :::
 
-:::exercise Count the vowels
-Write `fn count_vowels(text: &str) -> usize` that counts the vowels (a, e, i, o, u, in either case) in a string. Loop over `.chars()` and use `"aeiouAEIOU".contains(c)` to test each character. Call it with both a literal and a `String`.
+:::rosalind HAMM Counting Point Mutations
+**The biology.** When DNA is copied, mistakes occasionally happen: one letter is swapped for another. Such a change is called a **point mutation**. Comparing two versions of the same stretch of DNA letter by letter, the number of positions where they differ is a simple measure of how far apart they have drifted. Computer scientists call this count the **Hamming distance**.
+
+**The task.** The input is two DNA strings of the same length (up to 1000 letters), one per line. Print the number of positions at which they differ, as a single whole number. For example, `GATTACAGGCTAACGT` and `GACTACTGGCTTACGA` differ in 4 places.
+
+Write `fn hamming(s: &str, t: &str) -> usize`. Paste the two lines of your dataset into two separate string literals, each with `.trim()`. Inside the function, `s.as_bytes()` gives you the text as a `&[u8]` slice, which you can index with `[i]` like any array slice. (Indexing the `&str` itself is not allowed, as you saw above; the bytes are fine because DNA is ASCII.)
 :::solution
 ```rust
-fn count_vowels(text: &str) -> usize {
-    let mut count = 0;
-    for c in text.chars() {
-        if "aeiouAEIOU".contains(c) {
-            count += 1;
+fn hamming(s: &str, t: &str) -> usize {
+    let a = s.as_bytes(); // &[u8]: a slice of the bytes
+    let b = t.as_bytes();
+    let mut differences = 0;
+    for i in 0..a.len() {
+        if a[i] != b[i] {
+            differences += 1;
         }
     }
-    count
+    differences
 }
 
 fn main() {
-    println!("{}", count_vowels("Programming in Rust"));
-    let owned = String::from("Ownership And Borrowing");
-    println!("{}", count_vowels(&owned));
+    let s = "GATTACAGGCTAACGT".trim(); // paste the first line of your dataset
+    let t = "GACTACTGGCTTACGA".trim(); // paste the second line
+    println!("{}", hamming(s, t));
 }
 ```
 
 ```text
-5
-7
+4
 ```
+
+Both parameters are borrowed: `hamming` only reads the sequences, so taking `&str` means it works equally well with literals, slices and `String`s. The `.trim()` calls matter here, because a pasted newline on just one of the strings would make the lengths differ. If they ever did differ, `b[i]` would eventually be out of bounds and the program would panic, rather than print a wrong answer.
 :::
 
-:::exercise Shout it
-Write `fn shout(text: &str) -> String` that trims the whitespace from both ends, converts the text to upper case and adds an exclamation mark. `shout("  hello there ")` should return `"HELLO THERE!"`.
+:::rosalind SUBS Finding a Motif in DNA
+**The biology.** A short sequence that turns up again and again, and usually does something, is called a **motif**. For example, proteins that switch genes on recognise particular short motifs in DNA. Finding every place a motif occurs is one of the most basic jobs in bioinformatics.
+
+**The task.** The input is two DNA strings on two lines: a longer string `s` and a shorter motif `t` (both up to 1000 letters). Print every position in `s` where `t` starts, separated by spaces. Two details matter:
+
+- Positions are **1-based**, as biologists count: the first letter of `s` is position 1, not 0.
+- Matches may **overlap**. In `CATATACGATATAT`, the motif `ATA` starts at positions 2, 4, 9 and 11, and the matches at 2 and 4 share a letter.
+
+So for that example the output is `2 4 9 11`.
+
+Slide a window the length of `t` along `s`: for each starting byte index `i`, compare the slice `&s[i..i + t.len()]` with `t`. Stop when the window would run past the end of `s`.
 :::solution
 ```rust
-fn shout(text: &str) -> String {
-    let mut loud = text.trim().to_uppercase();
-    loud.push('!');
-    loud
-}
-
 fn main() {
-    println!("{}", shout("  hello there "));
-    println!("{}", shout("rust"));
-}
-```
+    let s = "CATATACGATATAT".trim(); // paste the first line of your dataset
+    let t = "ATA".trim();            // paste the second line
 
-```text
-HELLO THERE!
-RUST!
-```
-
-`to_uppercase` returns a new `String` that the function owns, so it can push onto it and then return it, moving ownership to the caller.
-:::
-
-:::exercise Trim the ends
-Write `fn middle(values: &[i32]) -> &[i32]` that returns a slice of everything except the first and last elements. Test it on `[1, 2, 3, 4, 5]` and print the result and its sum. You may assume the input has at least two elements.
-:::solution
-```rust
-fn middle(values: &[i32]) -> &[i32] {
-    &values[1..values.len() - 1]
-}
-
-fn main() {
-    let numbers = [1, 2, 3, 4, 5];
-    let inner = middle(&numbers);
-    let mut total = 0;
-    for n in inner {
-        total += *n;
+    let mut output = String::new();
+    let mut i = 0;
+    while i + t.len() <= s.len() {
+        if &s[i..i + t.len()] == t {
+            output.push_str(&format!("{} ", i + 1)); // 1-based position
+        }
+        i += 1;
     }
-    println!("{:?} sums to {total}", inner);
+    println!("{}", output.trim_end());
 }
 ```
 
 ```text
-[2, 3, 4] sums to 9
+2 4 9 11
 ```
 
-No numbers are copied: `inner` points into `numbers`.
+A few details worth a second look:
+
+- The window moves forward by one letter at a time, not by `t.len()`, which is what makes overlapping matches count.
+- The condition `i + t.len() <= s.len()` stops the loop before the slice would go past the end. The tempting `for i in 0..=s.len() - t.len()` works too, but if `t` were ever longer than `s` the subtraction would overflow, because `usize` can't go below zero.
+- `format!` builds each number with a trailing space, and `trim_end()` removes the last one before printing. Slicing by byte index is safe here only because the sequences are ASCII.
 :::
 
 ```quiz

@@ -2,7 +2,7 @@
 title: Functions
 module: Getting started
 summary: Write your own functions with typed parameters and return values, and learn the difference between statements and expressions.
-minutes: 25
+minutes: 30
 ---
 
 So far every program has lived inside `main`. Real programs are split into many small functions, each with a name that says what it does. Functions let you reuse code, give ideas a name, and test pieces on their own.
@@ -254,49 +254,109 @@ fn main() {
 
 Good comments explain *why* code does something. The code itself already says *what* it does.
 
-:::exercise Temperature converter
-Write a function `celsius_to_fahrenheit` that takes an `f64` and returns an `f64` (multiply by 9, divide by 5, add 32). Call it from `main` for 0, 37 and 100 degrees and print each result.
+Rosalind problems usually give you a few numbers and ask for one answer, which is exactly the shape of a function: parameters in, return value out. Writing the solution as a function, with `main` only supplying the dataset and printing the result, keeps the interesting part easy to read and easy to reuse.
+
+:::exercise Strand statistics
+Write a function `strand_stats(a: u32, c: u32, g: u32, t: u32) -> (u32, u32)`. Its parameters are how many of each base a DNA string contains; it returns the total length and the number of bases that are `G` or `C`. In `main`, call it with the counts 20, 12, 17 and 21, destructure the result and print both parts. Make sure the function body ends in an expression, not a statement.
 :::solution
 ```rust
-fn celsius_to_fahrenheit(celsius: f64) -> f64 {
-    celsius * 9.0 / 5.0 + 32.0
+fn strand_stats(a: u32, c: u32, g: u32, t: u32) -> (u32, u32) {
+    let length = a + c + g + t;
+    let gc = g + c;
+    (length, gc)
 }
 
 fn main() {
-    println!("{}", celsius_to_fahrenheit(0.0));
-    println!("{}", celsius_to_fahrenheit(37.0));
-    println!("{}", celsius_to_fahrenheit(100.0));
+    let (length, gc) = strand_stats(20, 12, 17, 21);
+    println!("length {length}, G or C: {gc}");
 }
 ```
 
 ```text
-32
-98.6
-212
+length 70, G or C: 29
 ```
+
+If you wrote `(length, gc);` with a semicolon, the compiler would report a mismatched type: the function promised a tuple but returned `()`.
 :::
 
-:::exercise Rectangle facts
-Write a function `rectangle(width: u32, height: u32) -> (u32, u32)` that returns the area and the perimeter. In `main`, destructure the result and print both. Make sure the function body ends in an expression, not a statement.
-:::solution
+:::rosalind FIB Rabbits and Recurrence Relations
+**The story.** This problem is a famous puzzle from 1202, by Leonardo of Pisa (Fibonacci), with one twist. You start with one pair of newborn rabbits. A pair takes one month to grow up, and from then on it produces `k` new pairs every month. Rabbits never die. How many pairs are there after `n` months?
+
+In month 1 there is 1 pair (newborns) and in month 2 still 1 pair (now adults). From month 3 on, the count is everyone alive last month, plus `k` babies for each pair that was alive two months ago (those are the adults):
+
+`F(1) = 1`, `F(2) = 1`, and `F(n) = F(n - 1) + k · F(n - 2)`.
+
+A formula like this, where each value is built from earlier ones, is called a **recurrence relation**. With `k = 1` it gives the classic Fibonacci numbers 1, 1, 2, 3, 5, 8, ...
+
+**The task.** The input is two numbers, `n` (at most 40) and `k` (at most 5). Print `F(n)`, a single whole number. For example, `n = 7` and `k = 2` give 43.
+
+Fill in `rabbits` below. You need to repeat a step once for each month from 3 to `n`. Loops are the topic of the next lesson, but here is all you need: `for _ in 3..=n { ... }` runs the body once for each month from 3 up to and including `n`. (The `_` means you don't need to know which month it is.)
+
 ```rust
-fn rectangle(width: u32, height: u32) -> (u32, u32) {
-    let area = width * height;
-    let perimeter = 2 * (width + height);
-    (area, perimeter)
+fn rabbits(n: u32, k: u64) -> u64 {
+    // Your code here.
+    0
 }
 
 fn main() {
-    let (area, perimeter) = rectangle(5, 3);
-    println!("area {area}, perimeter {perimeter}");
+    let n = 7; // paste n from your dataset
+    let k = 2; // paste k from your dataset
+    println!("{}", rabbits(n, k));
+}
+```
+:::solution
+Keep the last two months' counts in two `mut` variables and roll them forward one month at a time:
+
+```rust
+fn rabbits(n: u32, k: u64) -> u64 {
+    if n <= 2 {
+        return 1;
+    }
+    let mut two_ago: u64 = 1; // F(month - 2)
+    let mut last: u64 = 1;    // F(month - 1)
+    for _ in 3..=n {
+        let now = last + k * two_ago;
+        two_ago = last;
+        last = now;
+    }
+    last
+}
+
+fn main() {
+    let n = 7; // paste n from your dataset
+    let k = 2; // paste k from your dataset
+    println!("{}", rabbits(n, k));
 }
 ```
 
 ```text
-area 15, perimeter 16
+43
 ```
 
-If you wrote `(area, perimeter);` with a semicolon, the compiler would report a mismatched type: the function promised a tuple but returned `()`.
+Notice the early `return 1;` for the first two months, and the final `last`, with no semicolon, as the normal result.
+
+**Why `u64`?** The largest possible answer, `rabbits(40, 5)`, is 148277527396903091, about 1.5 × 10¹⁷. A `u32` tops out at about 4.3 × 10⁹, so it would overflow (and panic, in a debug build) long before month 40. A `u64` goes up to about 1.8 × 10¹⁹, which is enough.
+
+**A recursive version.** A function may call itself. That lets you copy the recurrence almost word for word:
+
+```rust
+fn rabbits(n: u32, k: u64) -> u64 {
+    if n <= 2 {
+        return 1;
+    }
+    rabbits(n - 1, k) + k * rabbits(n - 2, k)
+}
+
+fn main() {
+    println!("{}", rabbits(7, 2));
+}
+```
+
+```text
+43
+```
+
+It is lovely to read, but slow for large `n`: every call makes two more calls, which recompute the same months again and again. For `n = 40` that is hundreds of millions of calls, where the loop version does 38 steps. Use the loop for your dataset.
 :::
 
 ```quiz

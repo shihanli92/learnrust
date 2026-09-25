@@ -2,7 +2,7 @@
 title: References and Borrowing
 module: Ownership
 summary: Use values without taking ownership through shared and mutable references, and learn the borrowing rules that keep them safe.
-minutes: 35
+minutes: 40
 ---
 
 At the end of the last lesson, getting the length of a string meant moving the string into a function and then passing it back out again. That works, but it is clumsy. Most of the time a function only needs to *look at* a value, or change it briefly, and then hand it back.
@@ -308,14 +308,14 @@ Borrow errors always point to two or three places: where the first borrow is cre
 :::
 
 :::exercise Fix the list
-This program fails with E0502. Find two different ways to fix it.
+This program keeps a list of the positions where a pattern was found in a DNA string. It fails with E0502. Find two different ways to fix it.
 
 ```rust,compile_fail
 fn main() {
-    let mut list = vec![1, 2, 3];
-    let last = &list[2];
-    list.push(4);
-    println!("The old last item was {last}");
+    let mut positions = vec![3, 9, 14];
+    let last = &positions[2];
+    positions.push(21);
+    println!("The old last match was at position {last}");
 }
 ```
 :::solution
@@ -323,10 +323,10 @@ Fix 1: finish using the borrow before changing the list.
 
 ```rust
 fn main() {
-    let mut list = vec![1, 2, 3];
-    let last = &list[2];
-    println!("The old last item was {last}");
-    list.push(4);
+    let mut positions = vec![3, 9, 14];
+    let last = &positions[2];
+    println!("The old last match was at position {last}");
+    positions.push(21);
 }
 ```
 
@@ -334,58 +334,102 @@ Fix 2: don't borrow at all. The elements are `i32`, which is `Copy`, so you can 
 
 ```rust
 fn main() {
-    let mut list = vec![1, 2, 3];
-    let last = list[2]; // a copy, not a reference
-    list.push(4);
-    println!("The old last item was {last}");
+    let mut positions = vec![3, 9, 14];
+    let last = positions[2]; // a copy, not a reference
+    positions.push(21);
+    println!("The old last match was at position {last}");
 }
 ```
 
 Both print:
 
 ```text
-The old last item was 3
+The old last match was at position 14
 ```
 :::
 
-:::exercise Sign the letter
-Write two functions:
+:::rosalind REVC Complementing a Strand of DNA
+**The biology.** DNA has two strands that run in opposite directions, and they pair letter by letter: `A` with `T`, and `C` with `G`. So if you know one strand you know the other. To read the partner strand in its own direction, you reverse the sequence and swap every letter for its partner. The result is called the **reverse complement**. For example, the partner of `AACG` is `CGTT`.
 
-- `sign(letter: &mut String, name: &String)`, which appends a new line and `-- ` followed by the name.
-- `is_long(letter: &String) -> bool`, which returns whether the letter is more than 20 bytes long (use `.len()`).
+**The task.** The input is one DNA string (up to 1000 letters). Print its reverse complement. For example, `GATTACAGGCTAACGT` gives `ACGTTAGCCTGTAATC`.
 
-In `main`, create the letter `"Dear Rustacean,"` and a name, sign the letter, then print the letter and whether it is long. The name must still be usable after signing.
+**Part 1.** Write `fn reverse_complement(dna: &str) -> String`. The function only needs to *read* the DNA, so it borrows it; it builds and returns a new, owned `String`. (`&str` is the type of borrowed text, such as a string literal; the next lesson explains how it relates to `String`.) Just as `(1..=4).rev()` walks a range backwards, `dna.chars().rev()` gives you the characters from last to first. Push each one's partner onto a `String::new()`.
+
+**Part 2.** Complement a sequence *in place*, without building a second copy, by writing `fn reverse_complement_in_place(seq: &mut Vec<u8>)`. It works on the raw bytes of the text, which you can compare with byte literals like `b'A'` from the types lesson. Useful tools:
+
+- `dna.as_bytes().to_vec()` turns text into a `Vec<u8>` you own, one byte per letter.
+- `seq.reverse()` reverses a `Vec` in place.
+- `for base in seq.iter_mut()` hands you a `&mut u8` for each element in turn, so `*base = ...` overwrites it.
+- `String::from_utf8(seq).unwrap()` turns the bytes back into a `String` at the end. Like `parse`, it can fail (not every list of bytes is valid text), hence the `unwrap`.
 :::solution
-```rust
-fn sign(letter: &mut String, name: &String) {
-    letter.push_str("\n-- ");
-    letter.push_str(name);
-}
+Part 1:
 
-fn is_long(letter: &String) -> bool {
-    letter.len() > 20
+```rust
+fn reverse_complement(dna: &str) -> String {
+    let mut result = String::new();
+    for base in dna.chars().rev() {
+        if base == 'A' {
+            result.push('T');
+        } else if base == 'T' {
+            result.push('A');
+        } else if base == 'C' {
+            result.push('G');
+        } else if base == 'G' {
+            result.push('C');
+        }
+    }
+    result
 }
 
 fn main() {
-    let mut letter = String::from("Dear Rustacean,");
-    let name = String::from("Ferris");
-
-    sign(&mut letter, &name);
-
-    println!("{letter}");
-    println!("Long letter? {}", is_long(&letter));
-    println!("Signed by {name}");
+    let dna = "GATTACAGGCTAACGT".trim(); // paste your dataset between the quotes
+    println!("{}", reverse_complement(dna));
 }
 ```
 
 ```text
-Dear Rustacean,
--- Ferris
-Long letter? true
-Signed by Ferris
+ACGTTAGCCTGTAATC
 ```
 
-`letter.push_str(name)` works even though `name` is a `&String` and `push_str` expects text: Rust converts it automatically. The next lesson explains how.
+Any character that isn't one of the four bases is skipped, so a newline left over from pasting can't sneak into the answer.
+
+Part 2:
+
+```rust
+fn complement(base: u8) -> u8 {
+    if base == b'A' {
+        b'T'
+    } else if base == b'T' {
+        b'A'
+    } else if base == b'C' {
+        b'G'
+    } else if base == b'G' {
+        b'C'
+    } else {
+        base
+    }
+}
+
+fn reverse_complement_in_place(seq: &mut Vec<u8>) {
+    seq.reverse();
+    for base in seq.iter_mut() {
+        *base = complement(*base); // read the byte, then overwrite it
+    }
+}
+
+fn main() {
+    let dna = "GATTACAGGCTAACGT".trim(); // paste your dataset between the quotes
+    let mut seq = dna.as_bytes().to_vec();
+    reverse_complement_in_place(&mut seq);
+    println!("{}", String::from_utf8(seq).unwrap());
+}
+```
+
+```text
+ACGTTAGCCTGTAATC
+```
+
+The `&mut` in the call `reverse_complement_in_place(&mut seq)` tells every reader that `seq` is about to change. Inside the loop, `base` is a `&mut u8`, so `*base` on the right reads the byte it points to and `*base =` on the left writes a new one. Part 1 is simpler and usually what you want. Part 2 pays off when sequences are huge: a human chromosome has hundreds of millions of letters, and changing them in place avoids holding two copies in memory.
 :::
 
 ```quiz
