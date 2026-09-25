@@ -120,10 +120,10 @@
           <pre><span class="tok-prompt">$ </span><span class="tok-cmd">cargo new --lib dnakit</span>
 <span class="tok-ok">    Creating</span> library \`dnakit\` package
 <span class="tok-prompt">$ </span><span class="tok-cmd">cargo test</span>
-test result: <span class="tok-ok">ok</span>. 24 passed; 0 failed
+test result: <span class="tok-ok">ok</span>. 19 passed; 0 failed
 <span class="tok-prompt">$ </span><span class="tok-cmd">dnakit gc rosalind_gc.txt</span>
 Rosalind_4721
-53.846154
+61.538462
 <span class="tok-prompt">$ </span><span class="tok-cmd">cargo publish</span>
 <span class="tok-ok">   Published</span> dnakit v0.1.0 at registry \`crates-io\`</pre>
         </div>
@@ -159,7 +159,9 @@ Rosalind_4721
         <h2 class="section-title">Rosalind problems in this course</h2>
         <p>Each lesson's exercises are real problems from <a href="https://rosalind.info" target="_blank" rel="noopener">Rosalind</a>, chosen to practise that lesson's Rust. Solve one here, then download your dataset on Rosalind and submit the answer for credit.</p>
         <ol class="problem-list">${lessons
-          .flatMap((l) => l.rosalind.map((r) => `<li><a href="#${l.id}"><span class="rid">${esc(r)}</span><span class="lesson-num">${pad(l.n)}</span></a></li>`))
+          .flatMap((l) => l.rosalind.map((r) => ({ r, l })))
+          .filter(({ r }, i, all) => all.findIndex((x) => x.r === r) === i) // first appearance only
+          .map(({ r, l }) => `<li><a href="#${l.id}" title="First solved in lesson ${pad(l.n)}: ${esc(l.title)}"><span class="rid">${esc(r)}</span><span class="lesson-num">${pad(l.n)}</span></a></li>`)
           .join("")}</ol>
       </section>
 

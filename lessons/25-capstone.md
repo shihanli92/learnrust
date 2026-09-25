@@ -1,78 +1,70 @@
 ---
-title: Capstone: Build wordstat
+title: Capstone: Build dnakit
 module: Building a package
-summary: Put the whole course together by building, testing, documenting and packaging a real library crate with a small command-line tool.
-minutes: 90
+summary: Put the whole course together by building, testing, documenting and packaging dnakit, a bioinformatics library and command-line tool that solves Rosalind problems.
+minutes: 120
 ---
 
-Time to build something real. In this project you will write `wordstat`, a library crate that computes statistics about text (line, word and character counts, the most frequent words, the average word length) plus a small command-line tool that uses it. Along the way you will use almost everything from the course: structs and enums, collections, a custom error type, closures and iterators, modules, tests, doc comments and Cargo metadata. At the end, the crate is ready to publish.
+Time to build something real. In this project you will write `dnakit`, a library crate for DNA, RNA and protein sequences (reading FASTA files, counting bases, GC content, transcription, reverse complements and translation) plus a command-line tool that uses it to solve Rosalind problems straight from a downloaded dataset. Along the way you will use almost everything from the course: structs and enums, pattern matching, collections, a custom error type, closures and iterators, modules, tests, doc comments and Cargo metadata. At the end, the crate is ready to publish.
 
-Work through the steps in order and type the code yourself rather than copying it. Run `cargo test` often. A finished reference implementation lives in the course repository in the `capstone/wordstat/` folder, and the code on this page is identical to it, so you can compare your version whenever you get stuck.
+You have solved most of these problems before, one program at a time. The difference now is structure: the solutions become a tested, documented library with one tool in front of it, which is how real bioinformatics software is organised. Work through the steps in order and type the code yourself rather than copying it. A finished reference implementation lives in the course repository in the `capstone/dnakit/` folder, and the code on this page is identical to it, so you can compare your version whenever you get stuck.
 
 ## What you will build
 
-Given a file called `poem.txt`:
+Rosalind's GC problem gives you a FASTA file like this one (made up for this page; your download will have different IDs and longer sequences):
 
-```text,file=poem.txt
-Twinkle, twinkle, little star,
-How I wonder what you are!
-Up above the world so high,
-Like a diamond in the sky.
-Twinkle, twinkle, little star,
-How I wonder what you are!
+```text,file=rosalind_gc.txt
+>Rosalind_6397
+TTAGTGACAGTCAAGGCTAAAGCTTATTTCAACAATCATTTGTTGTGTATATGTACCAAT
+ACTTCGCATACTCAGGAACTATACGACACCAA
+>Rosalind_6407
+AATCCGACTAGACGGCCCCATTCTGACCTTCATAGAAGCGTCAGAACTGTATGTGCACGC
+CTCCGCACGAGATCGTCGGCGGTGTAGGCTCGGCTTACCATATCG
+>Rosalind_2152
+ACGGAAATATAATGCTAACGATGGGCATAGATCAAGTGCACGCCCTAGTGTACAGTCCAT
+GCCTAGATGCACCAAGAAGTCACACGAC
 ```
 
-the finished tool prints:
+The finished tool takes the problem ID and the file, and prints the answer in exactly the format Rosalind wants: the ID of the record with the highest GC content, then its GC content as a percentage.
 
 ```console
-$ wordstat --top 3 poem.txt
-lines:  6
-words:  32
-chars:  171
-unique: 20
-average word length: 4.03
-most frequent:
-     4  twinkle
-     2  are
-     2  how
+$ dnakit gc rosalind_gc.txt
+Rosalind_6407
+56.190476
 ```
 
-It also reads standard input when you don't name a file, and reports problems in plain words:
+The same tool solves five more problems, and it reports problems in plain words instead of crashing:
 
 ```console
-$ echo "The cat sat on the mat." | wordstat
-lines:  1
-words:  6
-chars:  24
-unique: 5
-average word length: 2.83
-most frequent:
-     2  the
-     1  cat
-     1  mat
-     1  on
-     1  sat
-$ wordstat missing.txt
-wordstat: cannot read missing.txt: No such file or directory (os error 2)
-$ wordstat --top
-wordstat: --top needs a number
-usage: wordstat [--top N] [FILE]
+$ dnakit revc rosalind_revc.txt
+CGTAAGACCTTTCTGAAGCAT
+$ dnakit dna rosalind_revc.txt
+6 4 5 6
+$ dnakit dna bad.txt
+dnakit: invalid base 'X' at position 11
+$ dnakit subs rosalind_subs.txt
+dnakit: unknown problem "subs" (try: dna, rna, revc, gc, hamm, prot)
+$ dnakit revc
+usage: dnakit <problem> <dataset-file>
+problems: dna, rna, revc, gc, hamm, prot
 ```
+
+`subs` is not supported yet. Adding it is the first exercise at the end of this lesson.
 
 ## Step 1: Create the package
 
-Start with a library package. You will add the binary's `src/main.rs` to it in step 7.
+Start with a library package. You will add the binary's `src/main.rs` to it in step 8.
 
 ```console
-$ cargo new --lib wordstat
-    Creating library `wordstat` package
-$ cd wordstat
+$ cargo new --lib dnakit
+    Creating library `dnakit` package
+$ cd dnakit
 ```
 
 By the end of the project, the package will look like this:
 
 ```text
-wordstat/
+dnakit/
 ├── Cargo.toml
 ├── LICENSE-APACHE
 ├── LICENSE-MIT
@@ -80,71 +72,110 @@ wordstat/
 ├── src/
 │   ├── lib.rs        # crate root: docs, modules, re-exports
 │   ├── error.rs      # the Error type
-│   ├── stats.rs      # Stats: all the counting
-│   ├── config.rs     # command-line argument parsing
+│   ├── fasta.rs      # reading FASTA files
+│   ├── seq.rs        # DNA helpers: counts, GC content, transcription, reverse complement
+│   ├── protein.rs    # translating RNA into protein
+│   ├── rosalind.rs   # solve(problem, dataset): one match arm per problem
 │   └── main.rs       # the thin command-line tool
 └── tests/
-    └── api.rs        # integration tests
+    ├── rosalind.rs   # integration tests with sample datasets
+    └── cli.rs        # tests that run the real binary
 ```
 
-This is the library-plus-binary layout from the modules lesson. All the logic lives in the library, where it is easy to test and reusable by other programs. `main.rs` only reads input, calls the library and prints.
+This is the library-plus-binary layout from the modules lesson. All the logic lives in the library, where it is easy to test and reusable by other programs. `main.rs` only reads the arguments and the file, calls the library and prints.
 
-Why is argument parsing in the library rather than in `main.rs`? Because it has rules worth testing (what if `--top` has no number?), and unit tests are easiest in a library. A crate that is mainly a library might keep it in the binary instead; for a small tool, this split keeps things simple.
+Notice that even the part that turns a dataset into an answer (`rosalind.rs`) is in the library, not in `main.rs`. It is the part most worth testing: an answer in the wrong format is rejected by Rosalind just like a wrong answer, and integration tests can only reach code in the library.
 
 ## Step 2: The crate root
 
 Replace the contents of `src/lib.rs`:
 
 ```rust,ignore,file=src/lib.rs
-//! Simple statistics for plain text.
+//! Small, dependency-free tools for DNA, RNA and protein sequences.
 //!
-//! `wordstat` counts lines, words and characters, and tells you which words
-//! appear most often. It ships as a library you can call from your own code
-//! and as a small command-line tool of the same name.
+//! `dnakit` reads FASTA files, counts bases, measures GC content, transcribes
+//! DNA into RNA, builds reverse complements and translates RNA into protein.
+//! It ships as a library you can call from your own code and as a
+//! command-line tool of the same name that solves
+//! [Rosalind](https://rosalind.info) problems.
 //!
 //! # Examples
 //!
 //! ```
-//! use wordstat::Stats;
+//! use dnakit::{fasta, gc_content, reverse_complement, transcribe, translate};
 //!
-//! let stats = Stats::from_text("The cat sat on the mat.");
-//! assert_eq!(stats.words, 6);
-//! assert_eq!(stats.top_words(1), vec![("the", 2)]);
+//! # fn main() -> Result<(), dnakit::Error> {
+//! let records = fasta::parse(">demo\nATGGC\nCTGAA\n")?;
+//! let dna = &records[0].seq;
+//! assert_eq!(dna, "ATGGCCTGAA");
+//! assert_eq!(gc_content(dna)?, 50.0);
+//! assert_eq!(reverse_complement(dna)?, "TTCAGGCCAT");
+//! assert_eq!(translate(&transcribe(dna)?)?, "MA");
+//! # Ok(())
+//! # }
 //! ```
 
 #![warn(missing_docs)]
 
-mod config;
 mod error;
-mod stats;
+pub mod fasta;
+mod protein;
+pub mod rosalind;
+mod seq;
 
-pub use config::Config;
 pub use error::Error;
-pub use stats::Stats;
+pub use protein::translate;
+pub use seq::{BaseCounts, count_bases, gc_content, hamming, reverse_complement, transcribe};
 ```
 
-The file does three jobs:
+The file does four jobs:
 
-- The `//!` comment is the front page of the documentation, with an example that runs as a doc test.
+- The `//!` comment is the front page of the documentation, with an example that runs as a doc test. The lines starting with `# ` wrap the example in a hidden `fn main` that returns `Result`, so it can use `?`, exactly as in the documentation lesson.
 - `#![warn(missing_docs)]` makes the compiler remind you about every public item you forget to document.
-- The three `mod` lines declare private modules, and the `pub use` lines re-export the important types. Users write `wordstat::Stats`, not `wordstat::stats::Stats`, and you are free to reorganise the files later without breaking anyone.
+- `mod error;`, `mod protein;` and `mod seq;` declare private modules, and the `pub use` lines re-export their important items. Users write `dnakit::reverse_complement`, not `dnakit::seq::reverse_complement`, and you are free to reorganise the files later without breaking anyone.
+- `pub mod fasta;` and `pub mod rosalind;` are public modules instead. Their functions are called `parse` and `solve`, which would be too vague on their own. Following the `use` conventions from the modules lesson, users call them with the module name in front: `fasta::parse(...)`, `rosalind::solve(...)`.
 
-The code won't compile until the three module files exist, so create them next.
+The crate won't compile until all five module files exist, which happens in step 7. Create them in order; after that, `cargo test` checks everything at once.
 
 ## Step 3: The error type
 
-Two things can go wrong in `wordstat`: the command-line arguments can be invalid, and a file can fail to load. Create `src/error.rs`:
+Several things can go wrong in `dnakit`: a sequence can contain a character that isn't a base, a FASTA file can be malformed, a dataset can have the wrong shape, the problem ID can be unknown, and the file can fail to load. Create `src/error.rs`:
 
 ```rust,ignore,file=src/error.rs
 use std::fmt;
 use std::io;
 
-/// Everything that can go wrong in wordstat.
+use crate::rosalind::PROBLEMS;
+
+/// Everything that can go wrong in dnakit.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
-    /// The command-line arguments were not valid. The message says why.
-    Usage(String),
-    /// A file could not be read.
+    /// A sequence contained a character that is not allowed in it.
+    InvalidBase {
+        /// Where the character is, counting from 1.
+        position: usize,
+        /// The character that was found.
+        found: char,
+    },
+    /// A FASTA file had sequence data before its first `>` header line.
+    MissingHeader {
+        /// The line number, counting from 1.
+        line: usize,
+    },
+    /// Two sequences that must be equally long are not.
+    LengthMismatch {
+        /// Length of the first sequence.
+        first: usize,
+        /// Length of the second sequence.
+        second: usize,
+    },
+    /// A dataset did not have the shape the problem needs. The message says
+    /// what was expected.
+    BadDataset(String),
+    /// The command-line tool was asked to solve a problem it doesn't know.
+    UnknownProblem(String),
+    /// A dataset file could not be read.
     Io {
         /// The file we tried to read.
         path: String,
@@ -156,8 +187,18 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Usage(message) => {
-                write!(f, "{message}\nusage: wordstat [--top N] [FILE]")
+            Error::InvalidBase { position, found } => {
+                write!(f, "invalid base {found:?} at position {position}")
+            }
+            Error::MissingHeader { line } => {
+                write!(f, "line {line}: sequence data before the first '>' header")
+            }
+            Error::LengthMismatch { first, second } => {
+                write!(f, "sequences differ in length ({first} and {second})")
+            }
+            Error::BadDataset(message) => write!(f, "bad dataset: {message}"),
+            Error::UnknownProblem(name) => {
+                write!(f, "unknown problem {name:?} (try: {})", PROBLEMS.join(", "))
             }
             Error::Io { path, source } => write!(f, "cannot read {path}: {source}"),
         }
@@ -167,8 +208,8 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Usage(_) => None,
             Error::Io { source, .. } => Some(source),
+            _ => None,
         }
     }
 }
@@ -176,462 +217,899 @@ impl std::error::Error for Error {
 
 This follows the custom error lesson:
 
-- An enum with one variant per kind of failure. `Io` keeps the file name *and* the original `io::Error`, so the message can say which file failed and why.
-- `Display` writes a message meant for people. For usage errors, it adds a usage line to help the user fix their command.
+- An enum with one variant per kind of failure. Variants carry the details a person needs to fix the problem: *which* character, at *which* position, on *which* line. `Io` keeps the file name *and* the original `io::Error`.
+- Positions and line numbers count from 1, because they are for people (and Rosalind counts from 1 too).
+- `Display` writes a message meant for people. The `UnknownProblem` message lists the problems the tool does know, using the `PROBLEMS` constant you will define in step 7, so the message stays correct when you add more.
 - Implementing `std::error::Error` makes it a proper error type. `source` exposes the underlying I/O error for tools that print error chains.
+- `#[non_exhaustive]` is the attribute from the publishing lesson. Code outside the crate that matches on `Error` must include a `_ =>` arm, so adding a variant in a later version is not a breaking change. Inside the crate, where you know every variant, it changes nothing.
 
-The type is called `Error`, which is the usual name for a crate's main error type. Users see it as `wordstat::Error`, just as the standard library has `std::io::Error` and `std::fmt::Error`. Inside this file, `std::error::Error` (the trait) is always written out in full so the two don't get mixed up.
+The type is called `Error`, the usual name for a crate's main error type. Users see it as `dnakit::Error`, just as the standard library has `std::io::Error` and `std::fmt::Error`. Inside this file, `std::error::Error` (the trait) is always written out in full so the two don't get mixed up.
 
-## Step 4: Counting words
+## Step 4: Reading FASTA
 
-Now the heart of the library. Create `src/stats.rs` with this code; the tests for it come in the next step:
+Most Rosalind datasets from GC onwards are FASTA files, so parsing them is the first real job. Create `src/fasta.rs`:
 
-```rust,ignore,file=src/stats.rs
-use std::collections::HashMap;
+```rust,ignore,file=src/fasta.rs
+//! Reading sequences in FASTA format.
+//!
+//! A FASTA file holds one or more records. Each record starts with a header
+//! line beginning with `>`, followed by the sequence, which may be wrapped
+//! over several lines:
+//!
+//! ```text
+//! >Rosalind_0001
+//! ACGTACGTAC
+//! GGTTAA
+//! >Rosalind_0002
+//! TTGACA
+//! ```
 
-/// Statistics about a piece of text.
+use crate::Error;
+
+/// One FASTA record: an ID and its sequence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Record {
+    /// The first word of the header line, without the `>`.
+    pub id: String,
+    /// The sequence, with all of its lines joined together.
+    pub seq: String,
+}
+
+/// Parses FASTA text into a list of records, in the order they appear.
 ///
-/// Create one with [`Stats::from_text`], then read the public fields or call
-/// the methods.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Stats {
-    /// Number of lines.
-    pub lines: usize,
-    /// Number of words (see [`Stats::from_text`] for what counts as a word).
-    pub words: usize,
-    /// Number of characters, counting each Unicode `char` once.
-    pub chars: usize,
-    counts: HashMap<String, usize>,
-}
-
-impl Stats {
-    /// Computes statistics for `text`.
-    ///
-    /// Words are separated by whitespace. Punctuation at the start or end of a
-    /// word is ignored and case does not matter, so `"The"`, `"the,"` and
-    /// `"THE"` are all the word `"the"`. A token with no letters or digits in
-    /// it, such as `"--"`, is not a word.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wordstat::Stats;
-    ///
-    /// let stats = Stats::from_text("One fish,\ntwo fish.");
-    /// assert_eq!(stats.lines, 2);
-    /// assert_eq!(stats.words, 4);
-    /// assert_eq!(stats.chars, 19);
-    /// ```
-    pub fn from_text(text: &str) -> Stats {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for word in text.split_whitespace().filter_map(normalize) {
-            *counts.entry(word).or_insert(0) += 1;
+/// Sequence lines are joined, blank lines are skipped, and spaces at the
+/// start or end of a line are ignored. Anything after the first word of a
+/// header line is ignored too. Text with no records gives an empty list.
+///
+/// # Errors
+///
+/// Returns [`Error::MissingHeader`] if a sequence line comes before the
+/// first header line.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::fasta;
+///
+/// let text = ">one\nACGT\nAC\n\n>two some description\nGGG\n";
+/// let records = fasta::parse(text).unwrap();
+/// assert_eq!(records.len(), 2);
+/// assert_eq!(records[0].id, "one");
+/// assert_eq!(records[0].seq, "ACGTAC");
+/// assert_eq!(records[1].id, "two");
+/// ```
+pub fn parse(text: &str) -> Result<Vec<Record>, Error> {
+    let mut records: Vec<Record> = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
         }
-        Stats {
-            lines: text.lines().count(),
-            words: counts.values().sum(),
-            chars: text.chars().count(),
-            counts,
+        if let Some(header) = line.strip_prefix('>') {
+            let id = header.split_whitespace().next().unwrap_or("");
+            records.push(Record {
+                id: id.to_string(),
+                seq: String::new(),
+            });
+        } else {
+            match records.last_mut() {
+                Some(record) => record.seq.push_str(line),
+                None => return Err(Error::MissingHeader { line: index + 1 }),
+            }
         }
     }
-
-    /// Number of different words.
-    pub fn unique_words(&self) -> usize {
-        self.counts.len()
-    }
-
-    /// How many times `word` appears. Case and surrounding punctuation are
-    /// ignored, just like in [`Stats::from_text`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wordstat::Stats;
-    ///
-    /// let stats = Stats::from_text("Spam, spam, SPAM and eggs");
-    /// assert_eq!(stats.count("spam"), 3);
-    /// assert_eq!(stats.count("ham"), 0);
-    /// ```
-    pub fn count(&self, word: &str) -> usize {
-        normalize(word)
-            .and_then(|w| self.counts.get(&w).copied())
-            .unwrap_or(0)
-    }
-
-    /// Returns up to `n` of the most frequent words with their counts, most
-    /// frequent first. Words with the same count are sorted alphabetically,
-    /// so the result is always the same for the same text.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wordstat::Stats;
-    ///
-    /// let stats = Stats::from_text("b a b c a b");
-    /// assert_eq!(stats.top_words(2), vec![("b", 3), ("a", 2)]);
-    /// ```
-    pub fn top_words(&self, n: usize) -> Vec<(&str, usize)> {
-        let mut pairs: Vec<(&str, usize)> = self
-            .counts
-            .iter()
-            .map(|(word, &count)| (word.as_str(), count))
-            .collect();
-        pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-        pairs.truncate(n);
-        pairs
-    }
-
-    /// Average word length in characters, or `None` if there are no words.
-    pub fn average_word_length(&self) -> Option<f64> {
-        if self.words == 0 {
-            return None;
-        }
-        let total: usize = self
-            .counts
-            .iter()
-            .map(|(word, count)| word.chars().count() * count)
-            .sum();
-        Some(total as f64 / self.words as f64)
-    }
-}
-
-/// Lowercases a token and strips punctuation from both ends.
-/// Returns `None` if nothing is left.
-fn normalize(token: &str) -> Option<String> {
-    let trimmed = token.trim_matches(|c: char| !c.is_alphanumeric());
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_lowercase())
-    }
+    Ok(records)
 }
 ```
 
 Some decisions worth understanding:
 
-- **What is a word?** `split_whitespace` splits on any whitespace. `normalize` then trims punctuation from both ends with `trim_matches` and a closure, so `"star,"` becomes `"star"`, but `"don't"` keeps its apostrophe. It also lowercases, so `"Twinkle"` and `"twinkle"` count as the same word. Tokens with nothing left, such as `"--"`, are dropped by `filter_map`, which both filters and maps in one step because `normalize` returns an `Option`.
-- **Counting** uses the `HashMap` entry API from the collections lesson: `*counts.entry(word).or_insert(0) += 1` inserts a zero the first time a word is seen, then increments. The total number of words is simply the sum of all the counts.
-- **Characters, not bytes.** `text.chars().count()` counts Unicode characters, so `"héllo"` has 5 characters even though it takes 6 bytes. `text.len()` would give the byte count.
-- **Public fields, private map.** `lines`, `words` and `chars` are plain numbers, so making them public fields is simple and harmless. The map is private: users go through `count`, `unique_words` and `top_words`, so you could later replace the `HashMap` with something else without a breaking change. It also means nobody outside the crate can build a `Stats` with a struct literal, so the fields always agree with each other.
-- **Deterministic results.** A `HashMap` iterates in an unpredictable order. `top_words` sorts by count (highest first) and then alphabetically with `then`, so the same text always gives the same answer. Without that, your tests would pass or fail at random.
-- **Borrowed results.** `top_words` returns `Vec<(&str, usize)>`, borrowing the words from `self` instead of cloning each `String`. Lifetime elision ties the result to `&self` automatically.
-- **Honest types.** `average_word_length` returns `Option<f64>` because an empty text has no average. Dividing by zero would give `NaN`, which is much easier to miss than a `None`.
+- **Module docs.** A `//!` comment at the top of a module file documents the module. Because `fasta` is a public module, this becomes its page in the generated docs. The example there is marked `text`, so rustdoc shows it without trying to compile it.
+- **One pass, no lookahead.** `parse` walks through the lines once. A header line starts a new, empty `Record`; any other line is added to the *last* record with `records.last_mut()`, which returns an `Option<&mut Record>`. That is how wrapped sequences are joined, and it is also how the "sequence before any header" mistake is spotted: there is no last record yet, so `last_mut` returns `None`.
+- **Forgiving about whitespace.** `trim` removes spaces and tabs at both ends of each line, and blank lines are skipped. `lines` already handles both Unix (`\n`) and Windows (`\r\n`) line endings. Real data files are messy, and a parser that trips over a trailing space is no fun five minutes before a deadline.
+- **`strip_prefix`** returns `Some(rest)` if the line starts with `>`, which both tests for a header and removes the `>` in one step. `split_whitespace().next()` then keeps the first word; `unwrap_or("")` handles a header that is just `>`.
+- **The index** from `enumerate` counts from 0, so the error adds 1 to report a line number a person can find in their editor.
 
-## Step 5: Unit tests
+Now its tests, at the bottom of the same file:
 
-Add a tests module to the bottom of `src/stats.rs`:
-
-```rust,ignore,file=src/stats.rs
+```rust,ignore,file=src/fasta.rs
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn empty_text_has_no_words() {
-        let stats = Stats::from_text("");
-        assert_eq!(stats.lines, 0);
-        assert_eq!(stats.words, 0);
-        assert_eq!(stats.chars, 0);
-        assert!(stats.top_words(3).is_empty());
-        assert_eq!(stats.average_word_length(), None);
-    }
-
-    #[test]
-    fn normalize_strips_punctuation_and_case() {
-        assert_eq!(normalize("Hello,"), Some("hello".to_string()));
-        assert_eq!(normalize("\"don't\""), Some("don't".to_string()));
-        assert_eq!(normalize("--"), None);
-    }
-
-    #[test]
-    fn counts_lines_words_and_chars() {
-        let stats = Stats::from_text("héllo world\nhello -- again\n");
-        assert_eq!(stats.lines, 2);
-        assert_eq!(stats.words, 4);
-        assert_eq!(stats.chars, 27);
-        assert_eq!(stats.unique_words(), 4);
-    }
-
-    #[test]
-    fn top_words_breaks_ties_alphabetically() {
-        let stats = Stats::from_text("pear apple pear fig apple");
+    fn joins_wrapped_lines() {
+        let records = parse(">a\nAC\nGT\n>b\nTT\n").unwrap();
         assert_eq!(
-            stats.top_words(10),
-            vec![("apple", 2), ("pear", 2), ("fig", 1)]
+            records,
+            vec![
+                Record {
+                    id: "a".to_string(),
+                    seq: "ACGT".to_string()
+                },
+                Record {
+                    id: "b".to_string(),
+                    seq: "TT".to_string()
+                },
+            ]
         );
     }
 
     #[test]
-    fn average_word_length_uses_every_occurrence() {
-        let stats = Stats::from_text("a bbb bbb");
-        assert_eq!(stats.average_word_length(), Some(7.0 / 3.0));
+    fn ignores_blank_lines_and_extra_spaces() {
+        let records = parse("\n >a \nAC  \n\n\tGT\r\n").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].seq, "ACGT");
+    }
+
+    #[test]
+    fn empty_text_has_no_records() {
+        assert!(parse("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn sequence_before_header_is_an_error() {
+        let result = parse("\nACGT\n>a\nAC\n");
+        assert!(matches!(result, Err(Error::MissingHeader { line: 2 })));
     }
 }
 ```
 
-Because the tests module is a child of `stats`, `use super::*;` gives it access to the private `normalize` function too. Each test checks one behaviour, and its name says which. The edge cases are the valuable ones: empty text, punctuation-only tokens, non-ASCII characters (`héllo`), and ties.
+`matches!` returns `true` if a value matches a pattern, and patterns can include literal values, so `Error::MissingHeader { line: 2 }` checks both the variant and the line number in one go. Each test checks one behaviour, and its name says which. The edge cases are the valuable ones: blank lines, stray spaces, empty input, and a broken file.
 
-## Step 6: Parsing arguments
+## Step 5: Sequence helpers
 
-The tool accepts an optional `--top N` and an optional file name, in any order. Create `src/config.rs`:
+Now the functions that do the biology. They all share one rule: a DNA sequence may only contain the uppercase letters `A`, `C`, `G` and `T`, and anything else is an error rather than a panic or a wrong answer. Create `src/seq.rs`:
 
-```rust,ignore,file=src/config.rs
+```rust,ignore,file=src/seq.rs
 use crate::Error;
 
-/// Options for one run of the `wordstat` command-line tool.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Config {
-    /// The file to read, or `None` to read standard input.
-    pub path: Option<String>,
-    /// How many of the most frequent words to show.
-    pub top: usize,
+/// How many times each base occurs in a DNA sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BaseCounts {
+    /// Number of `A`s.
+    pub a: usize,
+    /// Number of `C`s.
+    pub c: usize,
+    /// Number of `G`s.
+    pub g: usize,
+    /// Number of `T`s.
+    pub t: usize,
 }
 
-impl Config {
-    /// The number of top words shown when `--top` is not given.
-    pub const DEFAULT_TOP: usize = 5;
-
-    /// Builds a `Config` from command-line arguments, not including the
-    /// program name.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Usage`] if an option is unknown, if `--top` is not
-    /// followed by a number, or if more than one file is given.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wordstat::Config;
-    ///
-    /// let args = ["--top", "3", "notes.txt"].map(String::from);
-    /// let config = Config::from_args(args).unwrap();
-    /// assert_eq!(config.top, 3);
-    /// assert_eq!(config.path.as_deref(), Some("notes.txt"));
-    /// ```
-    pub fn from_args<I>(args: I) -> Result<Config, Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let mut path = None;
-        let mut top = Config::DEFAULT_TOP;
-        let mut args = args.into_iter();
-
-        while let Some(arg) = args.next() {
-            if arg == "--top" {
-                let value = args
-                    .next()
-                    .ok_or_else(|| Error::Usage("--top needs a number".to_string()))?;
-                top = value
-                    .parse()
-                    .map_err(|_| Error::Usage(format!("not a number: {value}")))?;
-            } else if arg.starts_with('-') {
-                return Err(Error::Usage(format!("unknown option: {arg}")));
-            } else if path.is_none() {
-                path = Some(arg);
-            } else {
-                return Err(Error::Usage("give at most one file".to_string()));
-            }
+/// Checks that every character of `seq` is one of the characters in
+/// `alphabet`, such as `"ACGT"` for DNA.
+pub(crate) fn check_bases(seq: &str, alphabet: &str) -> Result<(), Error> {
+    for (index, found) in seq.chars().enumerate() {
+        if !alphabet.contains(found) {
+            return Err(Error::InvalidBase {
+                position: index + 1,
+                found,
+            });
         }
-
-        Ok(Config { path, top })
     }
+    Ok(())
+}
+
+/// Counts the `A`, `C`, `G` and `T` bases in a DNA sequence.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidBase`] if `dna` contains anything other than the
+/// uppercase letters `A`, `C`, `G` and `T`.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::count_bases;
+///
+/// let counts = count_bases("GATTACA").unwrap();
+/// assert_eq!((counts.a, counts.c, counts.g, counts.t), (3, 1, 1, 2));
+/// ```
+pub fn count_bases(dna: &str) -> Result<BaseCounts, Error> {
+    check_bases(dna, "ACGT")?;
+    Ok(BaseCounts {
+        a: dna.matches('A').count(),
+        c: dna.matches('C').count(),
+        g: dna.matches('G').count(),
+        t: dna.matches('T').count(),
+    })
+}
+
+/// Returns the percentage (0 to 100) of bases in `dna` that are `G` or `C`.
+///
+/// An empty sequence has a GC content of 0.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidBase`] for anything that is not a DNA base.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::gc_content;
+///
+/// assert_eq!(gc_content("GGCA").unwrap(), 75.0);
+/// ```
+pub fn gc_content(dna: &str) -> Result<f64, Error> {
+    let counts = count_bases(dna)?;
+    if dna.is_empty() {
+        return Ok(0.0);
+    }
+    Ok((counts.g + counts.c) as f64 * 100.0 / dna.len() as f64)
 }
 ```
 
-`from_args` accepts any `IntoIterator<Item = String>` instead of reading `std::env::args()` itself. In `main.rs` you pass the real arguments, and in tests you pass a hand-made list. That small generic makes the function easy to test.
+- **`check_bases` is `pub(crate)`.** Every function in `seq.rs` validates its input, and so will the translation code in `protein.rs`, so the check lives in one helper that the whole crate can call. It isn't part of the public API, so users never see it, and you can change it freely.
+- **Validate first, then compute.** Once `check_bases` has passed, the rest of each function can assume clean input. `count_bases` just counts each letter with `str::matches`, which finds every occurrence of a pattern.
+- **`BaseCounts`** is a struct with public fields rather than a tuple or array, so callers write `counts.g` instead of remembering that G is at index 2. Deriving `Default` gives the all-zero value for free.
+- **`gc_content`** reuses `count_bases` for validation and counting. An empty sequence would mean dividing zero by zero, which gives `NaN` for floats, so it returns 0 instead, and the docs say so. `dna.len()` counts bytes, which is the same as counting characters here because `check_bases` has already made sure every character is one of four ASCII letters.
 
-Inside, `while let Some(arg) = args.next()` is used instead of a `for` loop because the `--top` branch needs to pull the *next* argument out of the same iterator. `ok_or_else` turns a missing value into an error, `map_err` replaces the parse error with a friendlier one, and `?` returns early in both cases.
+Continue in the same file:
 
-`DEFAULT_TOP` is an associated constant, so the default lives in one place and the tests can refer to it by name.
+```rust,ignore,file=src/seq.rs
+/// Transcribes DNA into RNA by replacing every `T` with `U`.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidBase`] for anything that is not a DNA base.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::transcribe;
+///
+/// assert_eq!(transcribe("GATTACA").unwrap(), "GAUUACA");
+/// ```
+pub fn transcribe(dna: &str) -> Result<String, Error> {
+    check_bases(dna, "ACGT")?;
+    Ok(dna.replace('T', "U"))
+}
 
-Now its tests, at the bottom of the same file:
+/// Returns the reverse complement of a DNA sequence: the other strand of
+/// the double helix, read in its own direction.
+///
+/// Every base is swapped for its partner (`A` with `T`, `C` with `G`) and
+/// the result is reversed.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidBase`] for anything that is not a DNA base.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::reverse_complement;
+///
+/// assert_eq!(reverse_complement("AACG").unwrap(), "CGTT");
+/// assert!(reverse_complement("AAXG").is_err());
+/// ```
+pub fn reverse_complement(dna: &str) -> Result<String, Error> {
+    check_bases(dna, "ACGT")?;
+    Ok(dna.chars().rev().map(complement).collect())
+}
 
-```rust,ignore,file=src/config.rs
+/// The partner of a DNA base.
+fn complement(base: char) -> char {
+    match base {
+        'A' => 'T',
+        'T' => 'A',
+        'C' => 'G',
+        'G' => 'C',
+        _ => unreachable!("check_bases only lets A, C, G and T through"),
+    }
+}
+
+/// Counts the positions at which two sequences differ (their Hamming
+/// distance).
+///
+/// Any characters can be compared, not only DNA bases.
+///
+/// # Errors
+///
+/// Returns [`Error::LengthMismatch`] if the sequences are not equally long.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::hamming;
+///
+/// assert_eq!(hamming("GATTACA", "GACTATA").unwrap(), 2);
+/// assert!(hamming("GAT", "GATT").is_err());
+/// ```
+pub fn hamming(first: &str, second: &str) -> Result<usize, Error> {
+    let (len1, len2) = (first.chars().count(), second.chars().count());
+    if len1 != len2 {
+        return Err(Error::LengthMismatch {
+            first: len1,
+            second: len2,
+        });
+    }
+    Ok(first
+        .chars()
+        .zip(second.chars())
+        .filter(|(a, b)| a != b)
+        .count())
+}
+```
+
+- **`transcribe`** is a single `replace`: RNA uses `U` (uracil) where DNA has `T` (thymine).
+- **`reverse_complement`** reads the characters backwards with `rev`, swaps each one for its partner by passing the function `complement` to `map`, and collects the result into a `String`. The order doesn't matter here (reversing then complementing gives the same result as the other way round), so the whole thing is one iterator chain.
+- **`complement`** is private and only ever sees checked input. The last arm uses `unreachable!`, a macro that panics with a message. It documents an assumption: if this line ever runs, there is a bug in the crate, not in the user's data. That makes it a legitimate panic in the sense of the error-handling lesson.
+- **`hamming`** doesn't validate bases at all, because counting differences makes sense for any two strings. It does insist on equal lengths, since `zip` would otherwise stop quietly at the end of the shorter string and give a wrong answer. The lengths are counted in characters so the error message makes sense even for non-ASCII input.
+
+The tests go at the bottom:
+
+```rust,ignore,file=src/seq.rs
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
+    #[test]
+    fn check_bases_reports_the_first_bad_character() {
+        assert!(check_bases("ACGT", "ACGT").is_ok());
+        let result = check_bases("ACxTy", "ACGT");
+        assert!(matches!(
+            result,
+            Err(Error::InvalidBase {
+                position: 3,
+                found: 'x'
+            })
+        ));
     }
 
     #[test]
-    fn defaults_when_no_arguments() {
-        let config = Config::from_args(args(&[])).unwrap();
-        assert_eq!(config.path, None);
-        assert_eq!(config.top, Config::DEFAULT_TOP);
+    fn lowercase_is_not_a_base() {
+        assert!(count_bases("acgt").is_err());
     }
 
     #[test]
-    fn reads_top_and_path_in_any_order() {
-        let config = Config::from_args(args(&["poem.txt", "--top", "2"])).unwrap();
-        assert_eq!(config.path.as_deref(), Some("poem.txt"));
-        assert_eq!(config.top, 2);
+    fn counts_every_base() {
+        let counts = count_bases("AACCCGGGGT").unwrap();
+        assert_eq!(
+            counts,
+            BaseCounts {
+                a: 2,
+                c: 3,
+                g: 4,
+                t: 1
+            }
+        );
     }
 
     #[test]
-    fn rejects_bad_arguments() {
-        for bad in [
-            args(&["--top"]),
-            args(&["--top", "many"]),
-            args(&["--verbose"]),
-            args(&["a.txt", "b.txt"]),
-        ] {
-            let result = Config::from_args(bad);
-            assert!(matches!(result, Err(Error::Usage(_))), "{result:?}");
-        }
+    fn gc_content_of_empty_sequence_is_zero() {
+        assert_eq!(gc_content("").unwrap(), 0.0);
+        assert_eq!(gc_content("ATAT").unwrap(), 0.0);
+        assert_eq!(gc_content("GCGC").unwrap(), 100.0);
+    }
+
+    #[test]
+    fn transcribe_only_changes_t() {
+        assert_eq!(transcribe("ACGTTT").unwrap(), "ACGUUU");
+    }
+
+    #[test]
+    fn reverse_complement_twice_gives_the_original() {
+        let dna = "ATGCCGTAAG";
+        let twice = reverse_complement(&reverse_complement(dna).unwrap()).unwrap();
+        assert_eq!(twice, dna);
+    }
+
+    #[test]
+    fn hamming_distance() {
+        assert_eq!(hamming("", "").unwrap(), 0);
+        assert_eq!(hamming("AAAA", "TTTT").unwrap(), 4);
+        assert!(matches!(
+            hamming("AA", "AAA"),
+            Err(Error::LengthMismatch {
+                first: 2,
+                second: 3
+            })
+        ));
     }
 }
 ```
 
-`rejects_bad_arguments` loops over several bad inputs and uses the `matches!` macro, which returns `true` if a value matches a pattern. The extra `"{result:?}"` argument is the custom failure message, so if the test fails you see which input got through.
+`reverse_complement_twice_gives_the_original` tests a *property* instead of a single example: doing the operation twice must give back what you started with. `lowercase_is_not_a_base` pins down a decision (lowercase input is rejected), so nobody changes it by accident.
 
-Run the tests now:
+## Step 6: Translating RNA into protein
+
+A ribosome reads RNA three bases at a time. Each group of three, a *codon*, stands for one amino acid, except the three *stop codons*, which end the protein. Create `src/protein.rs`:
+
+```rust,ignore,file=src/protein.rs
+use crate::Error;
+use crate::seq::check_bases;
+
+/// Translates RNA into a protein, written with one-letter amino acid codes.
+///
+/// The RNA is read three bases (one *codon*) at a time from the start, using
+/// the standard genetic code. Translation ends at the first stop codon
+/// (`UAA`, `UAG` or `UGA`) or at the end of the RNA; one or two bases left
+/// over at the end are ignored.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidBase`] if `rna` contains anything other than the
+/// uppercase letters `A`, `C`, `G` and `U`.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::translate;
+///
+/// assert_eq!(translate("AUGUUUCCCUAA").unwrap(), "MFP");
+/// assert_eq!(translate("AUGGC").unwrap(), "M");
+/// ```
+pub fn translate(rna: &str) -> Result<String, Error> {
+    check_bases(rna, "ACGU")?;
+    let mut protein = String::new();
+    for codon in rna.as_bytes().chunks_exact(3) {
+        match amino_acid(codon) {
+            Some(letter) => protein.push(letter),
+            None => break,
+        }
+    }
+    Ok(protein)
+}
+
+/// Looks up one codon in the standard genetic code. Returns `None` for the
+/// three stop codons.
+fn amino_acid(codon: &[u8]) -> Option<char> {
+    let letter = match codon {
+        b"UUU" | b"UUC" => 'F',
+        b"UUA" | b"UUG" | b"CUU" | b"CUC" | b"CUA" | b"CUG" => 'L',
+        b"AUU" | b"AUC" | b"AUA" => 'I',
+        b"AUG" => 'M',
+        b"GUU" | b"GUC" | b"GUA" | b"GUG" => 'V',
+        b"UCU" | b"UCC" | b"UCA" | b"UCG" | b"AGU" | b"AGC" => 'S',
+        b"CCU" | b"CCC" | b"CCA" | b"CCG" => 'P',
+        b"ACU" | b"ACC" | b"ACA" | b"ACG" => 'T',
+        b"GCU" | b"GCC" | b"GCA" | b"GCG" => 'A',
+        b"UAU" | b"UAC" => 'Y',
+        b"CAU" | b"CAC" => 'H',
+        b"CAA" | b"CAG" => 'Q',
+        b"AAU" | b"AAC" => 'N',
+        b"AAA" | b"AAG" => 'K',
+        b"GAU" | b"GAC" => 'D',
+        b"GAA" | b"GAG" => 'E',
+        b"UGU" | b"UGC" => 'C',
+        b"UGG" => 'W',
+        b"CGU" | b"CGC" | b"CGA" | b"CGG" | b"AGA" | b"AGG" => 'R',
+        b"GGU" | b"GGC" | b"GGA" | b"GGG" => 'G',
+        _ => return None,
+    };
+    Some(letter)
+}
+```
+
+- **`chunks_exact(3)`** splits the bytes into slices of exactly three. If one or two bases are left over at the end, they are skipped, which is the documented behaviour.
+- **Byte string patterns.** Because `check_bases` has already guaranteed ASCII input, working with bytes is safe, and `b"UUU"` is a byte string literal that can be used directly as a pattern against a `&[u8]` slice. Grouping codons with `|` makes the table a readable copy of the standard genetic code: one line per amino acid.
+- **`_ => return None`** covers the three stop codons. The `match` is used as an expression whose value is a `char`, so every other arm is just a letter, and the rare case leaves the function early.
+
+And the tests:
+
+```rust,ignore,file=src/protein.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exactly_three_of_the_64_codons_are_stops() {
+        let bases = [b'A', b'C', b'G', b'U'];
+        let mut stops = Vec::new();
+        for first in bases {
+            for second in bases {
+                for third in bases {
+                    let codon = [first, second, third];
+                    if amino_acid(&codon).is_none() {
+                        stops.push(String::from_utf8(codon.to_vec()).unwrap());
+                    }
+                }
+            }
+        }
+        assert_eq!(stops, ["UAA", "UAG", "UGA"]);
+    }
+
+    #[test]
+    fn stops_at_the_first_stop_codon() {
+        assert_eq!(translate("AUGUGAUUU").unwrap(), "M");
+    }
+
+    #[test]
+    fn empty_rna_gives_empty_protein() {
+        assert_eq!(translate("").unwrap(), "");
+    }
+
+    #[test]
+    fn dna_is_not_rna() {
+        assert!(matches!(
+            translate("AUGTTT"),
+            Err(Error::InvalidBase {
+                position: 4,
+                found: 'T'
+            })
+        ));
+    }
+}
+```
+
+`exactly_three_of_the_64_codons_are_stops` is a safety net for the table. With 61 hand-typed codons, a typo is easy, and a typo would make that codon fall through to `_ => return None` and silently cut proteins short. The test builds all 64 possible codons and checks that exactly the three real stop codons are missing from the table.
+
+## Step 7: Solving Rosalind problems
+
+This module connects the library to Rosalind: it takes a problem ID and the text of a dataset file, and returns the answer as a string in Rosalind's format. Create `src/rosalind.rs`:
+
+```rust,ignore,file=src/rosalind.rs
+//! Solve [Rosalind](https://rosalind.info) problems from their datasets.
+//!
+//! Each Rosalind problem has a short ID, such as `revc`. [`solve`] takes the
+//! ID and the text of a downloaded dataset, and returns the answer in the
+//! exact format Rosalind expects.
+
+use crate::{
+    Error, count_bases, fasta, gc_content, hamming, reverse_complement, transcribe, translate,
+};
+
+/// The problem IDs that [`solve`] understands.
+pub const PROBLEMS: [&str; 6] = ["dna", "rna", "revc", "gc", "hamm", "prot"];
+
+/// Solves one Rosalind problem.
+///
+/// `problem` is a problem ID from [`PROBLEMS`] (upper or lower case) and
+/// `dataset` is the text of the dataset file. The answer has no trailing
+/// newline.
+///
+/// # Errors
+///
+/// Returns [`Error::UnknownProblem`] for an ID not in [`PROBLEMS`], and
+/// any error from the library functions if the dataset is not valid.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::rosalind;
+///
+/// assert_eq!(rosalind::solve("dna", "GATTACA\n").unwrap(), "3 1 1 2");
+/// assert_eq!(rosalind::solve("REVC", "AACG\n").unwrap(), "CGTT");
+/// ```
+pub fn solve(problem: &str, dataset: &str) -> Result<String, Error> {
+    let text = dataset.trim();
+    match problem.to_ascii_lowercase().as_str() {
+        "dna" => {
+            let counts = count_bases(text)?;
+            Ok(format!(
+                "{} {} {} {}",
+                counts.a, counts.c, counts.g, counts.t
+            ))
+        }
+        "rna" => transcribe(text),
+        "revc" => reverse_complement(text),
+        "gc" => highest_gc(text),
+        "hamm" => {
+            let (first, second) = two_lines(text)?;
+            Ok(hamming(first, second)?.to_string())
+        }
+        "prot" => translate(text),
+        _ => Err(Error::UnknownProblem(problem.to_string())),
+    }
+}
+
+/// GC: the ID of the FASTA record with the highest GC content, then that
+/// GC content on the next line.
+fn highest_gc(dataset: &str) -> Result<String, Error> {
+    let records = fasta::parse(dataset)?;
+    let mut best: Option<(&str, f64)> = None;
+    for record in &records {
+        let gc = gc_content(&record.seq)?;
+        match best {
+            Some((_, top)) if top >= gc => {}
+            _ => best = Some((&record.id, gc)),
+        }
+    }
+    match best {
+        Some((id, gc)) => Ok(format!("{id}\n{gc:.6}")),
+        None => Err(Error::BadDataset("no FASTA records found".to_string())),
+    }
+}
+
+/// Splits a dataset into exactly two non-empty lines.
+fn two_lines(dataset: &str) -> Result<(&str, &str), Error> {
+    let mut lines = dataset.lines().map(str::trim).filter(|l| !l.is_empty());
+    match (lines.next(), lines.next(), lines.next()) {
+        (Some(first), Some(second), None) => Ok((first, second)),
+        _ => Err(Error::BadDataset("expected exactly two lines".to_string())),
+    }
+}
+```
+
+- **`PROBLEMS`** is a public constant listing the supported IDs, used in two places: the unknown-problem error message and the tool's usage message. It is an array of `&str` with its length in the type, `[&str; 6]`.
+- **`solve`** trims the dataset once, because downloaded files end with a newline, and then chooses a branch with `match`. `to_ascii_lowercase` lets people type `REVC` as it appears on the website. Most arms are one line, because the library functions already return `Result<String, Error>`.
+- **`highest_gc`** keeps the best record seen so far in an `Option<(&str, f64)>`. The `&str` borrows the ID from `records` instead of cloning it, which works because `records` lives until the end of the function. The match guard `if top >= gc` keeps the current best when a record ties with it, so the first of equal records wins. `{gc:.6}` prints six decimal places, like Rosalind's own answers.
+- **`two_lines`** matches on a tuple of three `next()` calls: the dataset must have a first line, a second line, and *no* third one. Checking the shape of the input here gives a clear message instead of a confusing wrong answer.
+
+Tests for the private helpers go at the bottom:
+
+```rust,ignore,file=src/rosalind.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_listed_problem_is_known() {
+        for problem in PROBLEMS {
+            let result = solve(problem, "");
+            assert!(
+                !matches!(result, Err(Error::UnknownProblem(_))),
+                "{problem} is listed but not handled"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_problem() {
+        assert!(matches!(
+            solve("fib", "5 3"),
+            Err(Error::UnknownProblem(name)) if name == "fib"
+        ));
+    }
+
+    #[test]
+    fn highest_gc_keeps_the_first_of_equal_records() {
+        let dataset = ">a\nGGAA\n>b\nCCTT\n>c\nAAAT\n";
+        assert_eq!(highest_gc(dataset).unwrap(), "a\n50.000000");
+    }
+
+    #[test]
+    fn two_lines_ignores_blank_lines() {
+        assert_eq!(two_lines("AC\n\nGT\n").unwrap(), ("AC", "GT"));
+        assert!(two_lines("AC").is_err());
+        assert!(two_lines("AC\nGT\nTT").is_err());
+    }
+}
+```
+
+`every_listed_problem_is_known` makes sure `PROBLEMS` and the `match` in `solve` never drift apart: if you list a problem but forget its arm, this test tells you. `unknown_problem` shows a match guard inside `matches!`, checking the name that was stored in the error.
+
+All five modules exist now, so run the tests:
 
 ```console
 $ cargo test
-   Compiling wordstat v0.1.0 (/home/you/wordstat)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
-     Running unittests src/lib.rs (target/debug/deps/wordstat-dd9273e6652ab610)
+   Compiling dnakit v0.1.0 (/home/you/dnakit)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+     Running unittests src/lib.rs (target/debug/deps/dnakit-7e80fe87409cfb57)
 
-running 8 tests
-test config::tests::defaults_when_no_arguments ... ok
-test config::tests::reads_top_and_path_in_any_order ... ok
-test config::tests::rejects_bad_arguments ... ok
-test stats::tests::counts_lines_words_and_chars ... ok
-test stats::tests::average_word_length_uses_every_occurrence ... ok
-test stats::tests::normalize_strips_punctuation_and_case ... ok
-test stats::tests::empty_text_has_no_words ... ok
-test stats::tests::top_words_breaks_ties_alphabetically ... ok
+running 19 tests
+test fasta::tests::empty_text_has_no_records ... ok
+test fasta::tests::ignores_blank_lines_and_extra_spaces ... ok
+test fasta::tests::joins_wrapped_lines ... ok
+test fasta::tests::sequence_before_header_is_an_error ... ok
+test protein::tests::dna_is_not_rna ... ok
+test protein::tests::empty_rna_gives_empty_protein ... ok
+test protein::tests::exactly_three_of_the_64_codons_are_stops ... ok
+test protein::tests::stops_at_the_first_stop_codon ... ok
+test rosalind::tests::every_listed_problem_is_known ... ok
+test rosalind::tests::highest_gc_keeps_the_first_of_equal_records ... ok
+test rosalind::tests::two_lines_ignores_blank_lines ... ok
+test rosalind::tests::unknown_problem ... ok
+test seq::tests::check_bases_reports_the_first_bad_character ... ok
+test seq::tests::counts_every_base ... ok
+test seq::tests::gc_content_of_empty_sequence_is_zero ... ok
+test seq::tests::hamming_distance ... ok
+test seq::tests::lowercase_is_not_a_base ... ok
+test seq::tests::reverse_complement_twice_gives_the_original ... ok
+test seq::tests::transcribe_only_changes_t ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-...
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dnakit
+
+running 9 tests
+test src/fasta.rs - fasta::parse (line 39) ... ok
+test src/lib.rs - (line 11) ... ok
+test src/protein.rs - protein::translate (line 18) ... ok
+test src/rosalind.rs - rosalind::solve (line 27) ... ok
+test src/seq.rs - seq::count_bases (line 41) ... ok
+test src/seq.rs - seq::gc_content (line 67) ... ok
+test src/seq.rs - seq::hamming (line 143) ... ok
+test src/seq.rs - seq::reverse_complement (line 110) ... ok
+test src/seq.rs - seq::transcribe (line 88) ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 ```
 
-You'll also see the doc tests from `lib.rs`, `stats.rs` and `config.rs` run at the end.
+The doc tests are the examples you wrote in the `///` comments, compiled and run against the public API.
 
-## Step 7: The command-line tool
+## Step 8: The command-line tool
 
 Create `src/main.rs`:
 
 ```rust,ignore,file=src/main.rs
 use std::fs;
-use std::io::{self, Read};
 use std::process;
 
-use wordstat::{Config, Error, Stats};
+use dnakit::{Error, rosalind};
 
 fn main() {
-    if let Err(err) = run() {
-        eprintln!("wordstat: {err}");
-        process::exit(1);
-    }
-}
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let [problem, path] = args.as_slice() else {
+        eprintln!("usage: dnakit <problem> <dataset-file>");
+        eprintln!("problems: {}", rosalind::PROBLEMS.join(", "));
+        process::exit(2);
+    };
 
-fn run() -> Result<(), Error> {
-    let config = Config::from_args(std::env::args().skip(1))?;
-    let text = read_input(config.path.as_deref())?;
-    let stats = Stats::from_text(&text);
-    print_report(&stats, config.top);
-    Ok(())
-}
-
-/// Reads the whole file, or all of standard input if there is no path.
-fn read_input(path: Option<&str>) -> Result<String, Error> {
-    match path {
-        Some(path) => fs::read_to_string(path).map_err(|source| Error::Io {
-            path: path.to_string(),
-            source,
-        }),
-        None => {
-            let mut text = String::new();
-            io::stdin()
-                .read_to_string(&mut text)
-                .map_err(|source| Error::Io {
-                    path: "standard input".to_string(),
-                    source,
-                })?;
-            Ok(text)
+    match run(problem, path) {
+        Ok(answer) => println!("{answer}"),
+        Err(err) => {
+            eprintln!("dnakit: {err}");
+            process::exit(1);
         }
     }
 }
 
-fn print_report(stats: &Stats, top: usize) {
-    println!("lines:  {}", stats.lines);
-    println!("words:  {}", stats.words);
-    println!("chars:  {}", stats.chars);
-    println!("unique: {}", stats.unique_words());
-    if let Some(average) = stats.average_word_length() {
-        println!("average word length: {average:.2}");
-    }
-
-    let top_words = stats.top_words(top);
-    if !top_words.is_empty() {
-        println!("most frequent:");
-        for (word, count) in top_words {
-            println!("{count:>6}  {word}");
-        }
-    }
+fn run(problem: &str, path: &str) -> Result<String, Error> {
+    let dataset = fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.to_string(),
+        source,
+    })?;
+    rosalind::solve(problem, &dataset)
 }
 ```
 
 The binary is deliberately thin:
 
-- `main` calls `run` and handles its error in one place: print a message to standard error with `eprintln!` and exit with status 1, the conventional signal that something failed. Returning `Result` from `main` would also work, but it prints the `Debug` form of the error, which is less friendly than our `Display` message.
-- `run` reads like a summary of the program: parse the arguments, read the input, compute the statistics, print them. The `?` operators need no error conversions, because every function here already returns `wordstat::Error`.
-- `read_input` wraps I/O failures in `Error::Io` with `map_err`, attaching the file name. `config.path.as_deref()` turns an `&Option<String>` into an `Option<&str>`.
-- `print_report` uses format specifiers: `{average:.2}` rounds to two decimal places, and `{count:>6}` right-aligns the count in six columns so the words line up.
+- `args.as_slice()` gives a slice of the arguments, and `let [problem, path] = ... else { ... };` is a `let`-`else` with a *slice pattern*: it matches only if there are exactly two arguments, binding them to `problem` and `path`. For any other number, the `else` block prints the usage and exits. An `else` block must not continue normally, and `process::exit` never returns, so that rule is satisfied.
+- Exit codes tell scripts what happened: 0 for success (the default), 1 for a failure while working, and 2 for a usage mistake, which is a common convention for command-line tools.
+- `run` reads the file, wrapping any I/O failure in `Error::Io` with `map_err` to attach the file name, and hands the text to the library. Every error is printed in one place with `eprintln!`, which writes to standard error, so a redirected answer (`dnakit gc data.txt > answer.txt`) never contains an error message.
+- Returning `Result` from `main` would also work, but it prints the `Debug` form of the error, which is less friendly than our `Display` message.
 
-Notice the `use wordstat::{Config, Error, Stats};` line: the binary uses the library by its crate name, exactly as any other project would.
+Notice the `use dnakit::{Error, rosalind};` line: the binary uses the library by its crate name, exactly as any other project would.
 
-Try it. The `--` separates Cargo's own options from the arguments for your program:
+Try it on the example file from the top of this page. The `--` separates Cargo's own options from the arguments for your program:
 
 ```console
-$ cargo run -- --top 3 poem.txt
-$ echo "The cat sat on the mat." | cargo run
+$ cargo run -- gc rosalind_gc.txt
+   Compiling dnakit v0.1.0 (/home/you/dnakit)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running `target/debug/dnakit gc rosalind_gc.txt`
+Rosalind_6407
+56.190476
 ```
 
-## Step 8: An integration test
+## Step 9: Integration tests
 
-Unit tests check the pieces from the inside. Add a test that uses the library purely through its public API, as a user would. Create `tests/api.rs`:
+Unit tests check the pieces from the inside. Integration tests use the crate from the outside, as a user would. Start with one test per problem, each using a small sample dataset, and one test that feeds in broken datasets. Create `tests/rosalind.rs`:
 
-```rust,ignore,file=tests/api.rs
-use wordstat::{Config, Stats};
+```rust,ignore,file=tests/rosalind.rs
+use dnakit::rosalind::solve;
 
-const POEM: &str = "\
-Twinkle, twinkle, little star,
-How I wonder what you are!
-Up above the world so high,
-Like a diamond in the sky.
-Twinkle, twinkle, little star,
-How I wonder what you are!
+#[test]
+fn dna_counts_bases() {
+    let answer = solve("dna", "ATGCTTCAGAAAGGTCTTACG\n").unwrap();
+    assert_eq!(answer, "6 4 5 6");
+}
+
+#[test]
+fn rna_and_revc() {
+    let dataset = "ATGCTTCAGAAAGGTCTTACG\n";
+    assert_eq!(solve("rna", dataset).unwrap(), "AUGCUUCAGAAAGGUCUUACG");
+    assert_eq!(solve("revc", dataset).unwrap(), "CGTAAGACCTTTCTGAAGCAT");
+}
+
+#[test]
+fn gc_picks_the_highest_record() {
+    let dataset = "\
+>Rosalind_1111
+CCTGCGGAAGATCGGCACTAGA
+ATCCCACTAAT
+>Rosalind_3333
+GCCGCCCAGGGCAACGAATTATGGGCG
+>Rosalind_2222
+CCATCGGTAGCGCATCCTTAGTCCAATTA
+AGTCCC
 ";
-
-#[test]
-fn stats_for_a_whole_poem() {
-    let stats = Stats::from_text(POEM);
-    assert_eq!(stats.lines, 6);
-    assert_eq!(stats.words, 32);
-    assert_eq!(stats.count("TWINKLE"), 4);
-    assert_eq!(
-        stats.top_words(3),
-        vec![("twinkle", 4), ("are", 2), ("how", 2)]
-    );
+    assert_eq!(solve("gc", dataset).unwrap(), "Rosalind_3333\n66.666667");
 }
 
 #[test]
-fn config_controls_how_many_words_are_listed() {
-    let args = ["--top", "1"].map(String::from);
-    let config = Config::from_args(args).unwrap();
-    let stats = Stats::from_text(POEM);
-    assert_eq!(stats.top_words(config.top), vec![("twinkle", 4)]);
+fn hamm_counts_differences() {
+    let dataset = "ACCGTTAGCATTGA\nACTGTAAGCTTTGA\n";
+    assert_eq!(solve("hamm", dataset).unwrap(), "3");
+}
+
+#[test]
+fn prot_translates_until_the_stop_codon() {
+    let dataset = "AUGAAACGUUGGCAUGAGUAA\n";
+    assert_eq!(solve("prot", dataset).unwrap(), "MKRWHE");
+}
+
+#[test]
+fn bad_datasets_give_errors_not_panics() {
+    assert!(solve("dna", "ACGU").is_err());
+    assert!(solve("gc", "ACGT\n>a\nAC").is_err());
+    assert!(solve("hamm", "ACGT").is_err());
+    assert!(solve("hamm", "ACGT\nAC").is_err());
+    assert!(solve("frob", "ACGT").is_err());
 }
 ```
 
-The `"\` at the start of `POEM` is a string continuation: a backslash at the end of a line skips the newline and any leading whitespace on the next line, so the text starts cleanly at "Twinkle".
+These tests are the best habit you can take from Rosalind into your own work: before you download a real dataset, run your code on a small input whose answer you know. Here those inputs become permanent tests. The `"\` at the start of the GC dataset is a string continuation: a backslash at the end of a line skips the newline, so the text starts cleanly at the first `>`.
 
-## Step 9: Documentation and polish
+Then test the tool itself, the way you will use it on Rosalind. Create `tests/cli.rs`:
+
+```rust,ignore,file=tests/cli.rs
+use std::fs;
+use std::path::PathBuf;
+use std::process::{Command, Output};
+
+/// Runs the compiled `dnakit` binary with the given arguments.
+fn dnakit(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_dnakit"))
+        .args(args)
+        .output()
+        .expect("failed to run dnakit")
+}
+
+/// Writes a dataset to a file in Cargo's scratch folder for tests.
+fn dataset(name: &str, contents: &str) -> PathBuf {
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
+    fs::write(&path, contents).unwrap();
+    path
+}
+
+#[test]
+fn prints_the_answer_to_stdout() {
+    let path = dataset("rosalind_revc.txt", "AACGT\n");
+    let output = dnakit(&["revc", path.to_str().unwrap()]);
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "ACGTT\n");
+}
+
+#[test]
+fn wrong_arguments_print_usage() {
+    let output = dnakit(&["revc"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("usage: dnakit"));
+}
+
+#[test]
+fn missing_file_is_an_error() {
+    let output = dnakit(&["dna", "no-such-file.txt"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.starts_with("dnakit: cannot read no-such-file.txt"));
+}
+```
+
+Cargo helps integration tests in two ways here:
+
+- `env!("CARGO_BIN_EXE_dnakit")` is the path of the compiled `dnakit` binary. `env!` reads an environment variable at *compile* time, and Cargo sets this one for integration tests, building the binary first. `std::process::Command` runs it and `output()` collects its exit status, standard output and standard error.
+- `env!("CARGO_TARGET_TMPDIR")` is a scratch folder inside `target/` where tests may write files, which is where `dataset` puts its input.
+
+The three tests check the promises the tool makes: answers on standard output with a trailing newline, exit code 2 and a usage message for wrong arguments, exit code 1 and a readable message for a missing file.
+
+## Step 10: Solve a real Rosalind problem
+
+Install the tool so the `dnakit` command works in any folder:
+
+```console
+$ cargo install --path .
+  Installing dnakit v0.1.0 (/home/you/dnakit)
+    ...
+   Installed package `dnakit v0.1.0 (/home/you/dnakit)` (executable `dnakit`)
+```
+
+`cargo install` builds in release mode and copies the binary into `~/.cargo/bin`, which `rustup` put on your `PATH`. Run it again after each change you make to the code.
+
+Now log in to Rosalind, open the GC problem, and click **Download dataset**. The five-minute timer starts, but you only need a few seconds:
+
+```console
+$ dnakit gc ~/Downloads/rosalind_gc.txt
+```
+
+Paste the two lines of output into the answer box (or save them with `> answer.txt` and upload the file), and submit. Do the same for DNA, RNA, REVC, HAMM and PROT. You solved most of them in earlier lessons, but a problem can be tried again with a fresh dataset, and seeing the tool pass all six is a satisfying end-to-end check.
+
+## Step 11: Documentation and polish
 
 You have been writing doc comments all along, so the documentation is nearly done. Build it and read it as a stranger would:
 
@@ -639,53 +1117,59 @@ You have been writing doc comments all along, so the documentation is nearly don
 $ cargo doc --open
 ```
 
-Check that the front page explains the crate, that every public item has a summary, and that the intra-doc links such as [`Stats::from_text`] work. Then polish:
+Check that the front page explains the crate, that every public item has a summary, that the `fasta` and `rosalind` modules have their own pages, and that the intra-doc links such as [`Error::InvalidBase`] work. Then polish:
 
 ```console
 $ cargo fmt
-$ cargo clippy -- -D warnings
+$ cargo clippy --all-targets -- -D warnings
 $ cargo test
 ```
 
-All three should finish without complaints. The reference implementation passes them.
+All three should finish without complaints. `--all-targets` makes Clippy check the tests too. The reference implementation passes them, and also builds its docs without a single warning.
 
 Next, write `README.md` in the package root. It is what people see on crates.io and on GitHub:
 
 ````markdown,file=README.md
-# wordstat
+# dnakit
 
-Count lines, words and characters in text, and find the most frequent words.
-`wordstat` is both a small Rust library and a command-line tool.
+Small, dependency-free tools for DNA, RNA and protein sequences: read FASTA
+files, count bases, measure GC content, transcribe, reverse-complement and
+translate. `dnakit` is both a Rust library and a command-line tool that
+solves [Rosalind](https://rosalind.info) problems.
 
 ## Command-line tool
 
 Install it with Cargo:
 
 ```console
-$ cargo install wordstat
+$ cargo install dnakit
 ```
 
-Then point it at a file, or pipe text into it:
+Then give it a Rosalind problem ID and a downloaded dataset file. The answer
+is printed in the format Rosalind expects:
 
 ```console
-$ wordstat --top 3 notes.txt
-$ cat notes.txt | wordstat
+$ dnakit revc rosalind_revc.txt
+$ dnakit gc rosalind_gc.txt
 ```
+
+Supported problems: `dna`, `rna`, `revc`, `gc`, `hamm` and `prot`.
 
 ## Library
 
-Add it to your project with `cargo add wordstat`, then:
+Add it to your project with `cargo add dnakit`, then:
 
 ```rust
-use wordstat::Stats;
+use dnakit::{fasta, gc_content, reverse_complement};
 
-let stats = Stats::from_text("The cat sat on the mat.");
-assert_eq!(stats.words, 6);
-assert_eq!(stats.top_words(1), vec![("the", 2)]);
+let records = fasta::parse(">demo\nATGGC\nCTGAA\n").unwrap();
+let dna = &records[0].seq;
+assert_eq!(gc_content(dna).unwrap(), 50.0);
+assert_eq!(reverse_complement(dna).unwrap(), "TTCAGGCCAT");
 ```
 
-A word is a run of non-whitespace characters, compared without regard to
-case and with punctuation at either end removed.
+Sequences must be uppercase. Functions return an error rather than panic
+when they meet a character that is not a valid base.
 
 ## License
 
@@ -695,27 +1179,27 @@ Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
 
 Finally, add the license files `LICENSE-MIT` and `LICENSE-APACHE`. Copy the standard texts, for example from the reference implementation, and put your name in the MIT copyright line.
 
-## Step 10: Package metadata
+## Step 12: Package metadata
 
 Fill in `Cargo.toml` with everything crates.io needs:
 
 ```toml,file=Cargo.toml
 [package]
-name = "wordstat"
+name = "dnakit"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Count lines, words and characters in text and find the most frequent words."
+description = "Read FASTA files and work with DNA, RNA and protein sequences, with a command-line tool for Rosalind problems."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-name/wordstat"
+repository = "https://github.com/your-name/dnakit"
 readme = "README.md"
-keywords = ["text", "words", "statistics", "word-count", "cli"]
-categories = ["text-processing", "command-line-utilities"]
+keywords = ["bioinformatics", "dna", "fasta", "rosalind"]
+categories = ["science", "command-line-utilities"]
 
 [dependencies]
 ```
 
-`[dependencies]` is empty: `wordstat` uses only the standard library, which means fast builds and nothing for users to audit. Replace `your-name` in `repository` with your own GitHub account once you have pushed the code.
+`[dependencies]` is empty: `dnakit` uses only the standard library, which means fast builds and nothing for users to audit. (The Cargo lesson showed that adding `bio` for its FASTA reader brings in almost ninety crates.) The `keywords` and `categories` help people find the crate; categories must come from the official list on crates.io. Replace `your-name` in `repository` with your own GitHub account once you have pushed the code.
 
 Check what would be uploaded:
 
@@ -728,19 +1212,22 @@ Cargo.toml.orig
 LICENSE-APACHE
 LICENSE-MIT
 README.md
-src/config.rs
 src/error.rs
+src/fasta.rs
 src/lib.rs
 src/main.rs
-src/stats.rs
-tests/api.rs
+src/protein.rs
+src/rosalind.rs
+src/seq.rs
+tests/cli.rs
+tests/rosalind.rs
 ```
 
-## Step 11: Publish it, or keep it private
+## Step 13: Publish it, or keep it private
 
 You now have a complete, publishable crate. You have two options.
 
-**Publish it.** The name `wordstat` might well be taken by the time you read this, perhaps by another learner. Pick a free name, for example `wordstat-yourname`, and change `name` in `Cargo.toml`. The library's crate name changes with it, so update the `use wordstat::...` lines in `main.rs`, `tests/api.rs` and the doc comments (`wordstat-yourname` becomes `wordstat_yourname` in code). Then follow the publishing lesson:
+**Publish it.** The name `dnakit` might well be taken by the time you read this, perhaps by another learner. Pick a free name, for example `dnakit-yourname`, and change `name` in `Cargo.toml`. The library's crate name changes with it, so update the `use dnakit::...` lines in `main.rs`, the tests and the doc comments (`dnakit-yourname` becomes `dnakit_yourname` in code). In `tests/cli.rs`, the binary becomes `CARGO_BIN_EXE_dnakit-yourname`, with the hyphen, because that one is a file name rather than a crate name. Then follow the publishing lesson:
 
 ```console
 $ cargo test
@@ -749,113 +1236,252 @@ $ cargo publish --dry-run
 $ cargo publish
 ```
 
-A few minutes later, your documentation appears on docs.rs, and anyone can install your tool with `cargo install wordstat-yourname`.
+A few minutes later, your documentation appears on docs.rs, and anyone can install your tool with `cargo install dnakit-yourname`.
 
 **Keep it private.** If you would rather not publish, add `publish = false` to `[package]` so it can't happen by accident. You can still use the library from your other projects by path or from Git:
 
 ```toml
 [dependencies]
-wordstat = { path = "../wordstat" }
+dnakit = { path = "../dnakit" }
 # or, once it is on GitHub:
-# wordstat = { git = "https://github.com/your-name/wordstat" }
+# dnakit = { git = "https://github.com/your-name/dnakit" }
 ```
 
-and you can install the command-line tool from your own folder with `cargo install --path .`.
+and you can install the command-line tool from your own folder with `cargo install --path .`, as in step 10.
 
 ## Compare with the reference
 
-The course repository contains the finished project in `capstone/wordstat/`. Its source files are identical to the code on this page, and it passes `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check` and `cargo doc`. If your version behaves differently, run both on the same input and compare, or diff the files. Small differences in wording or style are fine; the tests are the real judge.
+The course repository contains the finished project in `capstone/dnakit/`. Its source files are identical to the code on this page, and it passes `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` and `cargo doc`. If your version behaves differently, run both on the same dataset and compare, or diff the files. Small differences in wording or style are fine; the tests (and Rosalind) are the real judge.
 
-:::exercise Find the longest word
-Add a method `longest_word(&self) -> Option<&str>` to `Stats` that returns the longest word (in characters), or `None` for an empty text. If several words are equally long, return the one that comes first alphabetically, so the result is deterministic. Document it with an example, and add a unit test.
+:::rosalind SUBS Add a subs command
+A *motif* is a short stretch of DNA that means something, such as a place where a protein binds. The SUBS problem gives you two lines: a DNA string `s` and a shorter motif `t`. The answer is every position where `t` occurs in `s`, counting from 1 and separated by spaces. Occurrences may overlap: in `ATATAT`, the motif `ATA` occurs at 1 and at 3.
+
+Extend `dnakit` so that `dnakit subs rosalind_subs.txt` works:
+
+1. Add `pub fn find_motif(seq: &str, motif: &str) -> Vec<usize>` to `src/seq.rs`, with docs and a doc test, and re-export it from `lib.rs`. Decide what an empty motif should return.
+2. Add `"subs"` to `PROBLEMS` and an arm to `solve`. The `two_lines` helper already reads this dataset's shape.
+3. Add an integration test. With this dataset:
+
+```text
+CGTACGTACGTAC
+GTACG
+```
+
+the answer is:
+
+```text
+2 6
+```
+
+`every_listed_problem_is_known` will remind you if you add the name to `PROBLEMS` but forget the arm.
 :::solution
-Add this method inside `impl Stats` in `src/stats.rs`:
+In `src/seq.rs`, above the tests module:
 
-```rust,ignore,file=src/stats.rs
-    /// Returns the longest word, or `None` if there are no words. If several
-    /// words are equally long, the one that comes first alphabetically wins.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use wordstat::Stats;
-    ///
-    /// let stats = Stats::from_text("a tiny elephant");
-    /// assert_eq!(stats.longest_word(), Some("elephant"));
-    /// ```
-    pub fn longest_word(&self) -> Option<&str> {
-        self.counts
-            .keys()
-            .map(|word| word.as_str())
-            .max_by(|a, b| a.chars().count().cmp(&b.chars().count()).then(b.cmp(a)))
+```rust,ignore,file=src/seq.rs
+/// Finds every position where `motif` occurs in `seq`, counting from 1.
+/// Overlapping occurrences all count. An empty motif is found nowhere.
+///
+/// # Examples
+///
+/// ```
+/// use dnakit::find_motif;
+///
+/// assert_eq!(find_motif("TTATATAG", "ATA"), vec![3, 5]);
+/// assert!(find_motif("GATTACA", "GG").is_empty());
+/// ```
+pub fn find_motif(seq: &str, motif: &str) -> Vec<usize> {
+    if motif.is_empty() {
+        return Vec::new();
     }
+    seq.as_bytes()
+        .windows(motif.len())
+        .enumerate()
+        .filter(|(_, window)| *window == motif.as_bytes())
+        .map(|(index, _)| index + 1)
+        .collect()
+}
 ```
 
-And this test inside the `tests` module:
+`windows(n)` yields every run of `n` neighbouring bytes, one starting at each position, so overlapping matches are found naturally. (`str::match_indices` would skip overlaps, which is the classic mistake in this problem.) `windows(0)` panics, which is one more reason to handle the empty motif first.
 
-```rust,ignore,file=src/stats.rs
-    #[test]
-    fn longest_word_breaks_ties_alphabetically() {
-        let stats = Stats::from_text("pear fig plum kiwi");
-        assert_eq!(stats.longest_word(), Some("kiwi"));
-        assert_eq!(Stats::from_text("").longest_word(), None);
-    }
+In `src/lib.rs`, add `find_motif` to the re-exports:
+
+```rust,ignore,file=src/lib.rs
+pub use seq::{
+    BaseCounts, count_bases, find_motif, gc_content, hamming, reverse_complement, transcribe,
+};
 ```
 
-`max_by` keeps the element its comparison function calls the greatest. Comparing lengths first and then `b.cmp(a)` (reversed) makes the alphabetically *first* word win a tie in length.
+In `src/rosalind.rs`, import `find_motif` in the `use crate::{...}` line, then change `PROBLEMS` (the length in the type changes too) and add the arm:
+
+```rust,ignore,file=src/rosalind.rs
+pub const PROBLEMS: [&str; 7] = ["dna", "rna", "revc", "gc", "hamm", "prot", "subs"];
+```
+
+```rust,ignore,file=src/rosalind.rs
+        "subs" => {
+            let (seq, motif) = two_lines(text)?;
+            let positions: Vec<String> = find_motif(seq, motif)
+                .iter()
+                .map(|position| position.to_string())
+                .collect();
+            Ok(positions.join(" "))
+        }
+```
+
+And in `tests/rosalind.rs`:
+
+```rust,ignore,file=tests/rosalind.rs
+#[test]
+fn subs_finds_overlapping_motifs() {
+    let dataset = "CGTACGTACGTAC\nGTACG\n";
+    assert_eq!(solve("subs", dataset).unwrap(), "2 6");
+}
+```
+
+Run `cargo test`, then `cargo install --path .` and try it on a real SUBS dataset.
+:::
+
+:::rosalind CONS Add a cons command
+Given several DNA strings of the same length (in FASTA format), the *profile* counts, for each position, how many of the strings have `A`, `C`, `G` or `T` there. The *consensus string* takes the most common base at each position: it is a kind of average of the strings. Rosalind wants the consensus on the first line, then four lines of counts starting with `A:`, `C:`, `G:` and `T:`, the numbers separated by spaces. If two bases tie for most common, either is accepted.
+
+Add a `cons` command. Reject records of different lengths with `Error::LengthMismatch`, and invalid characters with `Error::InvalidBase`. For this dataset:
+
+```text
+>s1
+ATCCA
+>s2
+GTCAA
+>s3
+ATGCT
+```
+
+the answer is:
+
+```text
+ATCCA
+A: 2 0 0 1 2
+C: 0 0 2 2 0
+G: 1 0 1 0 0
+T: 0 3 0 0 1
+```
+
+Hint: for each position, collect the bases in that column into a `String` and let `count_bases` count them.
+:::solution
+Add a private function to `src/rosalind.rs`, next to `highest_gc`:
+
+```rust,ignore,file=src/rosalind.rs
+/// CONS: the consensus string, then one line of counts per base.
+fn consensus(dataset: &str) -> Result<String, Error> {
+    let records = fasta::parse(dataset)?;
+    let Some(first) = records.first() else {
+        return Err(Error::BadDataset("no FASTA records found".to_string()));
+    };
+    let length = first.seq.len();
+    for record in &records {
+        check_bases(&record.seq, "ACGT")?;
+        if record.seq.len() != length {
+            return Err(Error::LengthMismatch {
+                first: length,
+                second: record.seq.len(),
+            });
+        }
+    }
+
+    let mut consensus = String::new();
+    let mut rows = ["A:", "C:", "G:", "T:"].map(String::from);
+    for i in 0..length {
+        let column: String = records
+            .iter()
+            .map(|r| r.seq.as_bytes()[i] as char)
+            .collect();
+        let counts = count_bases(&column)?;
+        let per_base = [
+            ('A', counts.a),
+            ('C', counts.c),
+            ('G', counts.g),
+            ('T', counts.t),
+        ];
+        for (row, (_, count)) in rows.iter_mut().zip(per_base) {
+            row.push_str(&format!(" {count}"));
+        }
+        let (base, _) = per_base.iter().max_by_key(|(_, count)| *count).unwrap();
+        consensus.push(*base);
+    }
+    Ok(format!("{consensus}\n{}", rows.join("\n")))
+}
+```
+
+It needs one more import at the top of the file, `use crate::seq::check_bases;`, which works because `check_bases` is `pub(crate)`. Then add `"cons"` to `PROBLEMS` and one arm to `solve`:
+
+```rust,ignore,file=src/rosalind.rs
+        "cons" => consensus(text),
+```
+
+How it works: the first loop checks every record before any counting starts, so the indexing later can't go out of bounds. Then, column by column, the bases are gathered into a small string and counted by the existing `count_bases`. `rows` starts as the four labels and grows by one number per column. `max_by_key` picks a base with the highest count (on a tie it returns the last one, which Rosalind accepts). Finally the consensus and the rows are joined with newlines.
+
+A test for `tests/rosalind.rs`:
+
+```rust,ignore,file=tests/rosalind.rs
+#[test]
+fn cons_builds_consensus_and_profile() {
+    let dataset = ">s1\nATCCA\n>s2\nGTCAA\n>s3\nATGCT\n";
+    let expected = "ATCCA\nA: 2 0 0 1 2\nC: 0 0 2 2 0\nG: 1 0 1 0 0\nT: 0 3 0 0 1";
+    assert_eq!(solve("cons", dataset).unwrap(), expected);
+}
+```
 :::
 
 :::exercise Break it on purpose
 Tests are only useful if they fail when the code is wrong. Make each of these changes one at a time, run `cargo test --no-fail-fast`, note which tests fail, and then undo the change. (Plain `cargo test` stops after the first group of tests with a failure; `--no-fail-fast` runs them all.)
 
-1. In `top_words`, remove `.then(a.0.cmp(b.0))`.
-2. In `normalize`, replace `trimmed.to_lowercase()` with `trimmed.to_string()`.
-3. In `from_text`, count characters with `text.len()` instead of `text.chars().count()`.
+1. In `reverse_complement`, remove `.rev()`.
+2. In `check_bases`, change `position: index + 1` to `position: index`.
+3. In `solve`, change `let text = dataset.trim();` to `let text = dataset;`.
 :::solution
-1. `top_words_breaks_ties_alphabetically` and the integration test `stats_for_a_whole_poem` fail, but not necessarily on every run. Without the tie-breaker, words with equal counts come out in the `HashMap`'s random order. (The `top_words` doc test uses counts that are all different, so it keeps passing.) A test that fails only sometimes is called *flaky*, and hunting one down is exactly the kind of bug the tie-breaker prevents.
-2. `normalize_strips_punctuation_and_case` fails, and so do the doc tests on the crate root and on `count`, plus both integration tests, since `"The"` and `"the"` are now different words.
-3. `counts_lines_words_and_chars` fails: `"héllo"` is 6 bytes but 5 characters, so the count comes out as 28 instead of 27. This is why the test includes a non-ASCII character.
+1. Five tests fail: the doc tests on the crate root, on `reverse_complement` and on `solve`, the integration test `rna_and_revc`, and `prints_the_answer_to_stdout` in `tests/cli.rs`. The interesting one is the test that *passes*: `reverse_complement_twice_gives_the_original` still holds, because complementing twice gives back the original even without reversing. A property test is a useful net, but it doesn't replace checking real examples.
+2. `check_bases_reports_the_first_bad_character` and `dna_is_not_rna` fail. Off-by-one mistakes in positions are easy to make, which is why the tests check exact positions rather than just "is an error".
+3. `dna_counts_bases`, `rna_and_revc` and `prot_translates_until_the_stop_codon` fail, along with the doc test on `solve` and `prints_the_answer_to_stdout`: the newline at the end of every dataset is now reported as an invalid base. `gc` and `hamm` still pass because they split the text into lines themselves. This is exactly the bug that bites Rosalind solutions on the real dataset file after working on a pasted sample.
 :::
 
 ## Stretch goals
 
 Once the reference version works, make it yours. Some ideas, roughly from easiest to hardest:
 
-- Add a `--min-length N` option that ignores words shorter than `N` characters.
-- Ignore common *stop words* such as "the", "a" and "and", with a flag to turn it on.
-- Accept several files and print a report for each, followed by a total.
-- Implement `Display` for `Stats` so the report format lives in the library and other programs can reuse it.
-- Replace the hand-written argument parsing with the popular `clap` crate (use its `derive` feature).
-- Add a `--json` flag, using `serde` and `serde_json` behind an optional `json` feature of your crate.
-- Run it on a whole book from [Project Gutenberg](https://www.gutenberg.org) and compare the speed of `cargo run` and `cargo run --release`.
+- Accept lowercase sequences by converting the input to uppercase in one place.
+- Add more problems you solved in earlier lessons: `prtm` (protein mass), `mrna`, `tran` (transitions and transversions) or `grph` (overlap graphs).
+- Add `splc`: remove introns from a gene with `str::replace`, then `transcribe` and `translate`. All the parts are already in the library.
+- Add `orf`: find every protein that can be read from an open reading frame, starting at `AUG` and ending at a stop codon, on both strands. You will need `reverse_complement`, `transcribe` and a variant of `translate`, and a `BTreeSet` to keep each protein once.
+- Read the dataset from standard input when the file name is `-`, so `cat data.txt | dnakit gc -` works.
+- Replace the hand-written argument parsing with the popular `clap` crate (use its `derive` feature), and add `--help`.
 - Publish version `0.2.0` with your improvements, and decide whether any of your changes are breaking.
 
 ```quiz
-? Why does the project have both `src/lib.rs` and `src/main.rs`?
-- Cargo requires both for a package that will be published.
-+ The logic lives in a reusable, testable library; the binary is a thin wrapper around it.
-- `main.rs` holds the tests and `lib.rs` holds the code.
-- So the crate can be compiled with two different editions.
-= With a library crate, other programs can use the code and integration tests can import it. The binary just connects it to the command line.
+? Why does `solve` live in the library (`src/rosalind.rs`) rather than in `src/main.rs`?
+- Cargo does not allow `match` expressions in `main.rs`.
++ Code in the library can be reached by integration tests and by other programs; `main.rs` stays a thin wrapper.
+- Functions in `main.rs` can't return `Result`.
+- It makes the binary smaller.
+= Integration tests in `tests/` can only import the library crate. Keeping the logic there makes it testable and reusable.
 
-? `Stats` has public `lines`, `words` and `chars` fields but a private `counts` field. What does the private field achieve?
-- It makes `Stats` faster.
-- It hides the words from `Debug` output.
-+ The storage can change later without a breaking change, and outside code can't build an inconsistent `Stats`.
-- It lets `Stats` be `Copy`.
-= Private fields are a promise you haven't made. Users go through methods, so the internals stay yours to change.
+? `check_bases` is declared `pub(crate)`. What does that mean?
+- Only `lib.rs` can call it.
+- Anyone can call it, but it is hidden from the docs.
++ Any module in the dnakit crate can call it, but users of the crate cannot.
+- It is only compiled when testing.
+= `pub(crate)` makes an item visible throughout its own crate, so `protein.rs` can share the check without it becoming part of the public API.
 
-? Why does `top_words` sort equal counts alphabetically?
-+ `HashMap` iteration order is unpredictable, so without a tie-breaker results and tests would vary from run to run.
-- Alphabetical order is required by crates.io.
-- Sorting alphabetically is faster than sorting by count.
-- `sort_by` does not compile without a second key.
-= Deterministic output makes the tool predictable and the tests reliable.
+? The `Error` enum is marked `#[non_exhaustive]`. What does that allow you to do later?
++ Add a new variant without it being a breaking change.
+- Remove variants without anyone noticing.
+- Skip implementing `Display` for some variants.
+- Use `Error` without importing it.
+= Code outside the crate must include a `_ =>` arm when matching on the enum, so a new variant can't break it.
 
-? `Config::from_args` takes `I: IntoIterator<Item = String>` rather than calling `std::env::args()` itself. Why?
-- `std::env::args()` can't be used in a library.
-+ Tests can pass in a hand-made list of arguments, while `main` passes the real ones.
-- It makes the function run in parallel.
-- Generic functions don't need tests.
-= Taking the input as a parameter instead of reaching for global state makes the function easy to test.
+? What does `solve` do with the newline at the end of a downloaded dataset file?
+- It reports an invalid base.
+- Nothing: `str` methods ignore newlines automatically.
++ It calls `trim` once at the start, so no problem ever sees the trailing newline.
+- `fs::read_to_string` removes it.
+= `fs::read_to_string` returns the file exactly as it is, including the final newline. Trimming once in `solve` protects every problem.
 ```

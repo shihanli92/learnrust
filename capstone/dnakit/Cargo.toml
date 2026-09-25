@@ -1,0 +1,13 @@
+[package]
+name = "dnakit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Read FASTA files and work with DNA, RNA and protein sequences, with a command-line tool for Rosalind problems."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-name/dnakit"
+readme = "README.md"
+keywords = ["bioinformatics", "dna", "fasta", "rosalind"]
+categories = ["science", "command-line-utilities"]
+
+[dependencies]

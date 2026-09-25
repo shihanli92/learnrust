@@ -22,7 +22,7 @@ jobs:
           node tools/build.mjs
           git diff --exit-code dist/ || (echo "dist/ is stale: run 'node tools/build.mjs' and commit" && exit 1)
       - name: Capstone crate
-        working-directory: capstone/wordstat
+        working-directory: capstone/dnakit
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings

@@ -14,13 +14,13 @@ The mechanics take a few minutes. What deserves more thought is that publishing 
 Crate names on crates.io are **first come, first served**, and a name belongs to its owner forever. Before you get attached to a name, check whether it is free:
 
 ```console
-$ cargo search wordstat
+$ cargo search dnakit
 ```
 
 Or search on crates.io itself. A few things to know:
 
-- Names may contain letters, numbers, `-` and `_`. Hyphens and underscores count as the same character, so if `word-stat` exists you can't have `word_stat`. Names are also case-insensitive.
-- Pick something descriptive and unlikely to be confused with a popular crate. For a learning project, adding your name (like `wordstat-ferris`) is a perfectly good choice.
+- Names may contain letters, numbers, `-` and `_`. Hyphens and underscores count as the same character, so if `dna-kit` exists you can't have `dna_kit`. Names are also case-insensitive.
+- Pick something descriptive and unlikely to be confused with a popular crate. For a learning project, adding your name (like `dnakit-ferris`) is a perfectly good choice.
 - Claiming names you don't intend to use (squatting) is against the crates.io usage policy.
 
 The name in `Cargo.toml` is the name you publish under. If you rename the package, the library's crate name changes too, so update any `use` lines that mention it (with `-` becoming `_`, as you saw in the modules lesson).
@@ -31,16 +31,17 @@ crates.io needs more information than `cargo new` gives you. Here is a complete 
 
 ```toml
 [package]
-name = "wordstat"
+name = "dnakit"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Count lines, words and characters in text and find the most frequent words."
+description = "Read FASTA files and work with DNA, RNA and protein sequences, with a command-line tool for Rosalind problems."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-name/wordstat"
+repository = "https://github.com/your-name/dnakit"
 readme = "README.md"
-keywords = ["text", "words", "statistics", "word-count", "cli"]
-categories = ["text-processing", "command-line-utilities"]
+keywords = ["bioinformatics", "dna", "fasta", "rosalind"]
+categories = ["science", "command-line-utilities"]
+
 ```
 
 | Key | Required? | What it is |
@@ -49,8 +50,8 @@ categories = ["text-processing", "command-line-utilities"]
 | `license` | yes | An [SPDX](https://spdx.org/licenses/) license expression. |
 | `repository` | recommended | Link to the source code, shown on the crate page. |
 | `readme` | recommended | The file shown on the crate page. `README.md` is picked up by default if it exists. |
-| `keywords` | recommended | Up to five search terms, each at most 20 characters. |
-| `categories` | recommended | Up to five, chosen from the [official list](https://crates.io/category_slugs). |
+| `keywords` | recommended | Up to five search terms, each at most 20 characters, such as `dna` or `fasta`. |
+| `categories` | recommended | Up to five, chosen from the [official list](https://crates.io/category_slugs). Bioinformatics crates usually pick `science`. |
 | `rust-version` | recommended | The oldest Rust version your crate supports. Edition 2024 needs at least 1.85. |
 
 **Licenses.** Without a license, nobody is legally allowed to use your code. Most of the Rust ecosystem, including Rust itself, uses the dual license `MIT OR Apache-2.0`, which lets users pick whichever suits them. Unless you have a reason to choose differently, follow that convention: set `license = "MIT OR Apache-2.0"` and add the two license texts as `LICENSE-MIT` and `LICENSE-APACHE` files in the package root. You can copy them from almost any popular Rust project and put your own name in the MIT copyright line.
@@ -82,12 +83,15 @@ Cargo.toml.orig
 LICENSE-APACHE
 LICENSE-MIT
 README.md
-src/config.rs
 src/error.rs
+src/fasta.rs
 src/lib.rs
 src/main.rs
-src/stats.rs
-tests/api.rs
+src/protein.rs
+src/rosalind.rs
+src/seq.rs
+tests/cli.rs
+tests/rosalind.rs
 ```
 
 Files ignored by Git (such as `target/`) are left out automatically. If something else shouldn't be uploaded, such as large test data or private notes, exclude it in `Cargo.toml` with `exclude = ["notes/", "*.log"]`, or list exactly what to include with `include = [...]`. Uploads are limited to 10 MB. Cargo adds a few files of its own: `Cargo.toml.orig` is your original manifest, `Cargo.toml` is a normalised copy of it, and `.cargo_vcs_info.json` records the Git commit the package was built from.
@@ -97,12 +101,12 @@ Then do a full rehearsal:
 ```console
 $ cargo publish --dry-run
     Updating crates.io index
-   Packaging wordstat v0.1.0 (/home/you/wordstat)
-    Packaged 13 files, 26.4KiB (9.5KiB compressed)
-   Verifying wordstat v0.1.0 (/home/you/wordstat)
-   Compiling wordstat v0.1.0 (/home/you/wordstat/target/package/wordstat-0.1.0)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.91s
-   Uploading wordstat v0.1.0 (/home/you/wordstat)
+   Packaging dnakit v0.1.0 (/home/you/dnakit)
+    Packaged 16 files, 37.2KiB (12.6KiB compressed)
+   Verifying dnakit v0.1.0 (/home/you/dnakit)
+   Compiling dnakit v0.1.0 (/home/you/dnakit/target/package/dnakit-0.1.0)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s
+   Uploading dnakit v0.1.0 (/home/you/dnakit)
 warning: aborting upload due to dry run
 ```
 
@@ -115,19 +119,19 @@ Cargo also refuses to package if you have uncommitted changes in Git, so what yo
 ```console
 $ cargo publish
     Updating crates.io index
-   Packaging wordstat v0.1.0 (/home/you/wordstat)
-    Packaged 13 files, 26.4KiB (9.5KiB compressed)
-   Verifying wordstat v0.1.0 (/home/you/wordstat)
-   Compiling wordstat v0.1.0 (/home/you/wordstat/target/package/wordstat-0.1.0)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.91s
-   Uploading wordstat v0.1.0 (/home/you/wordstat)
-    Uploaded wordstat v0.1.0 to registry `crates-io`
-note: waiting for `wordstat v0.1.0` to be available at registry `crates-io`.
+   Packaging dnakit v0.1.0 (/home/you/dnakit)
+    Packaged 16 files, 37.2KiB (12.6KiB compressed)
+   Verifying dnakit v0.1.0 (/home/you/dnakit)
+   Compiling dnakit v0.1.0 (/home/you/dnakit/target/package/dnakit-0.1.0)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s
+   Uploading dnakit v0.1.0 (/home/you/dnakit)
+    Uploaded dnakit v0.1.0 to registry `crates-io`
+note: waiting for `dnakit v0.1.0` to be available at registry `crates-io`.
 You may press ctrl-c to skip waiting; the crate should be available shortly.
-   Published wordstat v0.1.0 at registry `crates-io`
+   Published dnakit v0.1.0 at registry `crates-io`
 ```
 
-That's it. Your crate has a page at `https://crates.io/crates/wordstat`, and within a few minutes docs.rs builds the documentation from your doc comments and publishes it at `https://docs.rs/wordstat`. You don't have to do anything for that: every version of every crate gets its docs built. Anyone can now run `cargo add wordstat`, and because the package has a binary, `cargo install wordstat` too.
+That's it. Your crate has a page at `https://crates.io/crates/dnakit`, and within a few minutes docs.rs builds the documentation from your doc comments and publishes it at `https://docs.rs/dnakit`. You don't have to do anything for that: every version of every crate gets its docs built. Anyone can now run `cargo add dnakit`, and because the package has a binary, `cargo install dnakit` too, and then solve Rosalind problems with your tool.
 
 It is a good habit to tag the release in Git so you can always find the exact source of each version: `git tag v0.1.0` and `git push --tags`.
 
@@ -137,7 +141,7 @@ You can't overwrite a version, and you can't delete one. If you publish `0.1.0` 
 
 ## Semantic versioning in Rust
 
-Your version number is a promise to your users, and Cargo relies on it. Remember from the Cargo lesson that a dependency written as `wordstat = "1.2.0"` accepts any `1.x.y` from `1.2.0` up. So when you release `1.3.0`, everyone who depends on you gets it with their next `cargo update`. If `1.3.0` breaks their code, you have broken their build without them changing anything.
+Your version number is a promise to your users, and Cargo relies on it. Remember from the Cargo lesson that a dependency written as `dnakit = "1.2.0"` accepts any `1.x.y` from `1.2.0` up. So when you release `1.3.0`, everyone who depends on you gets it with their next `cargo update`. If `1.3.0` breaks their code, you have broken their build without them changing anything.
 
 The rules for `MAJOR.MINOR.PATCH`:
 
@@ -157,32 +161,32 @@ What counts as breaking in Rust is sometimes surprising. Some examples:
 - **Not breaking:** adding a new public function, type or module, or a new method on your own type.
 - **Not breaking:** changing private code, however much you like.
 
-The enum case catches many people out. Here, version 1.0 of a library had two variants, and version 1.1 added `Csv`. A user's code that was fine with 1.0 stops compiling:
+The enum case catches many people out. Here, version 1.0 of a library that reads sequence files had two variants, and version 1.1 added `GenBank`. A user's code that was fine with 1.0 stops compiling:
 
 ```rust,compile_fail
 pub enum Format {
-    Json,
-    Toml,
-    Csv, // new in "1.1.0"
+    Fasta,
+    Fastq,
+    GenBank, // new in "1.1.0"
 }
 
 pub fn extension(format: Format) -> &'static str {
     match format {
-        Format::Json => "json",
-        Format::Toml => "toml",
+        Format::Fasta => "fasta",
+        Format::Fastq => "fastq",
     }
 }
 ```
 
 ```text
-error[E0004]: non-exhaustive patterns: `Format::Csv` not covered
+error[E0004]: non-exhaustive patterns: `Format::GenBank` not covered
   --> src/lib.rs:8:11
    |
  8 |     match format {
-   |           ^^^^^^ pattern `Format::Csv` not covered
+   |           ^^^^^^ pattern `Format::GenBank` not covered
 ```
 
-If you expect to add variants later, mark the enum `#[non_exhaustive]`. Code outside your crate is then forced to include a `_ =>` arm, and adding variants becomes a minor change. The same attribute on a struct prevents outside code from using struct literals, so you can add fields later. The Cargo book has a thorough [SemVer compatibility chapter](https://doc.rust-lang.org/cargo/reference/semver.html), and the `cargo-semver-checks` tool can compare your crate against its last published version and flag breaking changes automatically.
+If you expect to add variants later, mark the enum `#[non_exhaustive]`, as `dnakit` does with its `Error` type. Code outside your crate is then forced to include a `_ =>` arm, and adding variants becomes a minor change. The same attribute on a struct prevents outside code from using struct literals, so you can add fields later. The Cargo book has a thorough [SemVer compatibility chapter](https://doc.rust-lang.org/cargo/reference/semver.html), and the `cargo-semver-checks` tool can compare your crate against its last published version and flag breaking changes automatically.
 
 ## Releasing a new version
 
@@ -209,9 +213,9 @@ You don't have to publish to share code between your own projects. Cargo can dep
 
 ```toml
 [dependencies]
-wordstat = { git = "https://github.com/your-name/wordstat" }
+dnakit = { git = "https://github.com/your-name/dnakit" }
 helpers = { git = "https://github.com/your-name/helpers", tag = "v0.2.0" }
-shapes = { path = "../shapes" }
+seqtools = { path = "../seqtools" }
 ```
 
 A Git dependency uses the default branch unless you pick a `branch`, `tag` or `rev` (a commit hash). `Cargo.lock` records the exact commit, so builds stay reproducible. A path dependency is ideal while you develop two crates side by side.
@@ -239,9 +243,9 @@ Once you publish regularly, you can let GitHub Actions do it. crates.io supports
 :::exercise Pick the version
 Your crate is at version `0.4.2`. For each change, what is the next version number?
 
-1. You fix a bug where `count("")` returned 1 instead of 0.
-2. You add a new public function `longest_word`.
-3. You rename the public method `top` to `top_words`.
+1. You fix a bug where `gc_content("")` returned `NaN` instead of 0.
+2. You add a new public function `find_motif`.
+3. You rename the public function `revcomp` to `reverse_complement`.
 4. Your crate is later at `1.3.0`, and you add a variant to a public enum that isn't `#[non_exhaustive]`.
 :::solution
 1. `0.4.3`: a compatible bug fix is a PATCH bump.
@@ -250,26 +254,141 @@ Your crate is at version `0.4.2`. For each change, what is the next version numb
 4. `2.0.0`: adding an enum variant can break users' `match` expressions, so it is a MAJOR change after 1.0.
 :::
 
-:::exercise Get ready to publish
-Take any library package you have written during the course (or create a tiny one with `cargo new --lib`). Fill in all the metadata from this lesson, add a README, pick a name that is free on crates.io, and run `cargo publish --dry-run` until it succeeds. Publishing for real is optional.
+:::rosalind PRTM Calculating Protein Mass, as a publishable crate
+Proteins are chains of amino acids, and scientists identify them by weighing them in a mass spectrometer. The weight of a protein (its *monoisotopic mass*, in daltons) is the sum of the masses of its amino acids, called *residues* once they are in a chain. You solved this problem in the error-handling lesson; the dataset is one protein string, and the answer is its mass, which you can print with three decimal places.
+
+This time, package the solution as a crate you could publish:
+
+1. Create a library-plus-binary package with a name that is free on crates.io, such as `protein-mass-yourname`.
+2. In `src/lib.rs`, write and document `residue_mass(residue: char) -> Option<f64>` and `protein_mass(protein: &str) -> Option<f64>`, with crate-level docs, `#![warn(missing_docs)]` and a doc test for each function. The residue masses are in the table in the error-handling lesson.
+3. In `src/main.rs`, read the dataset file and print the answer.
+4. Fill in all the metadata from this lesson, add a README and the license files, and run `cargo test` and `cargo publish --dry-run` until both succeed. Publishing for real is optional.
+
+For the sample `MEADQWLKS` the answer is:
+
+```text
+1088.496
+```
 :::solution
+To run it on this page, here is everything in one file. In the package, everything above `SAMPLE` goes into `src/lib.rs` (without the `use std::error::Error;` line, which only `main` needs):
+
+```rust
+//! Monoisotopic masses of proteins.
+
+#![warn(missing_docs)]
+
+use std::error::Error;
+
+/// Returns the monoisotopic mass of one amino acid residue, in daltons,
+/// or `None` if `residue` is not one of the 20 standard one-letter codes.
+///
+/// # Examples
+///
+/// ```
+/// use protein_mass_ferris::residue_mass;
+///
+/// assert_eq!(residue_mass('G'), Some(57.02146));
+/// assert_eq!(residue_mass('B'), None);
+/// ```
+pub fn residue_mass(residue: char) -> Option<f64> {
+    let mass = match residue {
+        'A' => 71.03711,
+        'C' => 103.00919,
+        'D' => 115.02694,
+        'E' => 129.04259,
+        'F' => 147.06841,
+        'G' => 57.02146,
+        'H' => 137.05891,
+        'I' => 113.08406,
+        'K' => 128.09496,
+        'L' => 113.08406,
+        'M' => 131.04049,
+        'N' => 114.04293,
+        'P' => 97.05276,
+        'Q' => 128.05858,
+        'R' => 156.10111,
+        'S' => 87.03203,
+        'T' => 101.04768,
+        'V' => 99.06841,
+        'W' => 186.07931,
+        'Y' => 163.06333,
+        _ => return None,
+    };
+    Some(mass)
+}
+
+/// Returns the total monoisotopic mass of a protein, the sum of its
+/// residue masses, or `None` if it contains an unknown residue.
+///
+/// # Examples
+///
+/// ```
+/// use protein_mass_ferris::protein_mass;
+///
+/// let mass = protein_mass("GG").unwrap();
+/// assert!((mass - 114.04292).abs() < 1e-9);
+/// ```
+pub fn protein_mass(protein: &str) -> Option<f64> {
+    protein.chars().map(residue_mass).sum()
+}
+
+const SAMPLE: &str = "MEADQWLKS\n";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let mass = protein_mass(input.trim()).ok_or("unknown residue in the dataset")?;
+    println!("{mass:.3}");
+    Ok(())
+}
+```
+
+```text
+1088.496
+```
+
+`src/main.rs` then uses the library by its crate name:
+
+```rust,ignore,file=src/main.rs
+use std::error::Error;
+
+use protein_mass_ferris::protein_mass;
+
+const SAMPLE: &str = "MEADQWLKS\n";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let mass = protein_mass(input.trim()).ok_or("unknown residue in the dataset")?;
+    println!("{mass:.3}");
+    Ok(())
+}
+```
+
+`protein_mass` adds up an iterator of `Option<f64>` values straight into an `Option<f64>`: the sum is `None` as soon as one residue is unknown. The doc test for it compares with a small tolerance instead of `==`, because adding floating-point numbers can be off in the last digit.
+
 A finished `[package]` section looks like this (with your own name and repository):
 
 ```toml
 [package]
-name = "temperature-ferris"
+name = "protein-mass-ferris"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Convert and parse temperatures in Celsius and Fahrenheit."
+description = "Compute the monoisotopic mass of a protein from its amino acid sequence."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ferris/temperature"
+repository = "https://github.com/ferris/protein-mass"
 readme = "README.md"
-keywords = ["temperature", "celsius", "fahrenheit", "units"]
+keywords = ["protein", "mass", "bioinformatics", "rosalind"]
 categories = ["science"]
+
 ```
 
-Common problems the dry run reports: a missing `description` or `license`, an invalid category (it must match the official list exactly), and uncommitted changes. If the Verifying step fails with a missing file, check `cargo package --list` and your `include`/`exclude` settings.
+Common problems the dry run reports: a missing `description` or `license`, an invalid category (it must match the official list exactly), and uncommitted changes (use `--allow-dirty` while you experiment). If the Verifying step fails with a missing file, check `cargo package --list` and your `include`/`exclude` settings.
 :::
 
 ```quiz

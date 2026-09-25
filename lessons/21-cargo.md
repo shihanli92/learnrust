@@ -5,7 +5,7 @@ summary: Read and write Cargo.toml, add crates from crates.io, understand versio
 minutes: 30
 ---
 
-You have been using Cargo since the first lesson to build and run code. Cargo is also Rust's package manager: it downloads other people's crates, picks compatible versions, and builds everything in the right order. Using a well-tested crate for a solved problem (random numbers, JSON, command-line parsing) is normal and encouraged in Rust.
+You have been using Cargo since the first lesson to build and run code. Cargo is also Rust's package manager: it downloads other people's crates, picks compatible versions, and builds everything in the right order. Using a well-tested crate for a solved problem (reading FASTA files, JSON, command-line parsing) is normal and encouraged in Rust.
 
 This lesson looks at Cargo from the point of view of someone about to write a crate: what goes in `Cargo.toml`, how dependencies and versions work, and which commands help you along the way.
 
@@ -14,13 +14,13 @@ This lesson looks at Cargo from the point of view of someone about to write a cr
 `Cargo.toml` is the package's **manifest**, written in TOML: `[section]` headers followed by `key = value` lines. A new library looks like this:
 
 ```console
-$ cargo new --lib temperature
-    Creating library `temperature` package
+$ cargo new --lib seqtools
+    Creating library `seqtools` package
 ```
 
 ```toml
 [package]
-name = "temperature"
+name = "seqtools"
 version = "0.1.0"
 edition = "2024"
 
@@ -40,67 +40,75 @@ There are many more `[package]` keys, such as `description`, `license` and `repo
 
 ## Adding a dependency
 
-The quickest way to add a dependency is `cargo add`, which finds the latest version on [crates.io](https://crates.io) and edits `Cargo.toml` for you:
+The quickest way to add a dependency is `cargo add`, which finds the latest version on [crates.io](https://crates.io) and edits `Cargo.toml` for you. Bioinformatics in Rust has a well-known crate for this: [rust-bio](https://rust-bio.github.io), published as `bio`. It reads FASTA and other file formats, and has hundreds of sequence algorithms.
 
 ```console
-$ cargo new dice
-$ cd dice
-$ cargo add rand
+$ cargo new gc-finder
+$ cd gc-finder
+$ cargo add bio
     Updating crates.io index
-      Adding rand v0.10.3 to dependencies
+      Adding bio v4.0.1 to dependencies
              Features:
-             + alloc
-             + std
-             + std_rng
-             + sys_rng
-             + thread_rng
-             - chacha
-             - log
-             - serde
-             - simd_support
-             - unbiased
+             - generic-simd
+             - pest
+             - pest_derive
+             - phylogeny
+             - runtime-dispatch-simd
 ```
 
 Your version numbers will probably be newer. `Cargo.toml` now contains:
 
 ```toml
 [dependencies]
-rand = "0.10.3"
+bio = "4.0.1"
 ```
 
-The crate is now available in your code under its name:
+The crate is now available in your code under its name. Here it reads FASTA records, joining wrapped lines for you:
 
 ```rust,ignore,file=src/main.rs
+use bio::io::fasta;
+
+const DATA: &str = ">seq1 wrapped over two lines
+ACGTTGCA
+GGCC
+>seq2
+ATATATAT
+";
+
 fn main() {
-    let roll: u8 = rand::random_range(1..=6);
-    println!("You rolled a {roll}");
+    let reader = fasta::Reader::new(DATA.as_bytes());
+    for result in reader.records() {
+        let record = result.expect("invalid FASTA");
+        println!("{}: {} bases", record.id(), record.seq().len());
+    }
 }
 ```
 
 ```console
 $ cargo run
-   Compiling libc v0.2.189
-   Compiling rand_core v0.10.1
-   Compiling cfg-if v1.0.5
-   Compiling getrandom v0.4.3
-   Compiling cpufeatures v0.3.1
-   Compiling chacha20 v0.10.2
-   Compiling rand v0.10.3
-   Compiling dice v0.1.0 (/home/you/dice)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.45s
-     Running `target/debug/dice`
-You rolled a 5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling libm v0.2.16
+   ...
+   Compiling bio v4.0.1
+   Compiling gc-finder v0.1.0 (/home/you/gc-finder)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 32.96s
+     Running `target/debug/gc-finder`
+seq1: 12 bases
+seq2: 8 bases
 ```
 
-The first build downloads and compiles `rand` and the crates *it* depends on. After that they are cached, so later builds only recompile your own code. You can remove a dependency with `cargo remove rand`.
+`fasta::Reader::new` accepts anything that can be read from, and a byte slice (`DATA.as_bytes()`) is the simplest such thing. Each record comes out as a `Result`, because a real file could be broken halfway through. `record.seq()` returns the sequence as a byte slice, `&[u8]`, rather than a `&str`: DNA is plain ASCII, and bytes are faster to work with.
+
+The first build downloads and compiles `bio` and the crates *it* depends on, almost ninety of them, which is why it takes half a minute. After that they are cached, so later builds only recompile your own code. You can remove a dependency with `cargo remove bio`.
 
 :::tip Finding good crates
-Search [crates.io](https://crates.io) for crates and check download counts, recent releases and the linked repository. Every crate published there gets its documentation built automatically on [docs.rs](https://docs.rs), for example `https://docs.rs/rand`. Read the docs before you add a dependency: a clear API and good examples are a sign of a well-maintained crate.
+Search [crates.io](https://crates.io) for crates and check download counts, recent releases and the linked repository. Every crate published there gets its documentation built automatically on [docs.rs](https://docs.rs), for example `https://docs.rs/bio`. Read the docs before you add a dependency: a clear API and good examples are a sign of a well-maintained crate.
 :::
 
 ## Version requirements
 
-`rand = "0.10.3"` does *not* mean "exactly 0.10.3". It is a **version requirement** that says "any version compatible with 0.10.3". Compatibility follows [Semantic Versioning](https://semver.org) (semver): the first non-zero number in the version is the one that signals breaking changes.
+`bio = "4.0.1"` does *not* mean "exactly 4.0.1". It is a **version requirement** that says "any version compatible with 4.0.1", which here means anything from 4.0.1 up to, but not including, 5.0.0. Compatibility follows [Semantic Versioning](https://semver.org) (semver): the first non-zero number in the version is the one that signals breaking changes.
 
 | Requirement | Allows | Notes |
 | --- | --- | --- |
@@ -119,8 +127,8 @@ When Cargo resolves your requirements, it writes the exact versions it picked in
 
 ```text
 [[package]]
-name = "rand"
-version = "0.10.3"
+name = "bio"
+version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "..."
 ```
@@ -130,11 +138,11 @@ You never edit this file by hand. Its job is to make builds **reproducible**: as
 - For applications, always commit `Cargo.lock` to version control.
 - For libraries, the current recommendation is to commit it too. It only affects your own builds and tests: when someone depends on your library, *their* `Cargo.lock` decides the versions, and yours is ignored.
 
-To move to newer compatible versions deliberately, run `cargo update` (everything) or `cargo update rand` (one crate). It changes `Cargo.lock`, not `Cargo.toml`.
+To move to newer compatible versions deliberately, run `cargo update` (everything) or `cargo update bio` (one crate). It changes `Cargo.lock`, not `Cargo.toml`.
 
 ## Features
 
-Many crates have optional parts called **features** that you switch on when you need them. This keeps compile times and binary sizes down for everyone who doesn't. In the `cargo add rand` output above, `+` marks the features enabled by default and `-` the optional ones.
+Many crates have optional parts called **features** that you switch on when you need them. This keeps compile times and binary sizes down for everyone who doesn't. In `cargo add` output, `+` marks the features enabled by default and `-` the optional ones. All of `bio`'s features are optional: `phylogeny`, for example, adds a reader for evolutionary trees, and you only pay for compiling it if you switch it on.
 
 ```console
 $ cargo add serde --features derive
@@ -148,10 +156,11 @@ $ cargo add serde --features derive
 ```toml
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
-rand = { version = "0.10.3", default-features = false, features = ["alloc"] }
+bio = { version = "4.0.1", features = ["phylogeny"] }
+regex = { version = "1", default-features = false, features = ["std"] }
 ```
 
-The second line shows how to switch off a crate's **default features** and pick only the ones you need, which is common in libraries that want to stay lightweight.
+The last line shows how to switch off a crate's **default features** and pick only the ones you need, which is common in libraries that want to stay lightweight.
 
 Your own crate can offer features too. A typical use is an **optional dependency** that users only pay for if they ask for it:
 
@@ -164,7 +173,7 @@ default = []
 serde = ["dep:serde"]
 ```
 
-Inside the crate, code that needs serde is marked `#[cfg(feature = "serde")]` so it only compiles when the feature is on. Users would enable it with `cargo add temperature --features serde`. You won't need features for your first crate, but you will see them in every larger crate's docs.
+Inside the crate, code that needs serde is marked `#[cfg(feature = "serde")]` so it only compiles when the feature is on. Users would enable it with `cargo add seqtools --features serde`. You won't need features for your first crate, but you will see them in every larger crate's docs.
 
 ## Dev-dependencies
 
@@ -196,7 +205,7 @@ opt-level = 1   # a little optimisation, for code that is too slow in debug buil
 lto = true      # link-time optimisation: slower builds, sometimes faster programs
 ```
 
-Always measure speed with a release build. Debug builds can be 10 to 100 times slower.
+Always measure speed with a release build. Debug builds can be 10 to 100 times slower, which you will notice as soon as you feed a program a whole genome instead of a Rosalind dataset.
 
 ## Workspaces, briefly
 
@@ -222,60 +231,139 @@ All members share one `Cargo.lock` and one `target/` directory, so shared depend
 | `cargo install name` | Install a binary crate (a tool) from crates.io into `~/.cargo/bin`. |
 | `cargo clean` | Delete `target/`, forcing a full rebuild. |
 
-`cargo tree` is especially useful when you want to know why a crate you never added is in your build:
+`cargo tree` is especially useful when you want to know why a crate you never added is in your build. With `-i` (for *invert*) it shows who depends on a given crate. You never asked for `memchr`, so where does it come from?
 
 ```console
-$ cargo tree
-dice v0.1.0 (/home/you/dice)
-└── rand v0.10.3
-    ├── chacha20 v0.10.2
-    │   ├── cfg-if v1.0.5
-    │   ├── cpufeatures v0.3.1
-    │   └── rand_core v0.10.1
-    ├── getrandom v0.4.3
-    │   ├── cfg-if v1.0.5
-    │   ├── libc v0.2.189
-    │   └── rand_core v0.10.1
-    └── rand_core v0.10.1
+$ cargo tree -i memchr
+memchr v2.8.3
+├── aho-corasick v1.1.5
+│   ├── regex v1.13.1
+│   │   ├── bio v4.0.1
+│   │   │   └── gc-finder v0.1.0 (/home/you/gc-finder)
+│   │   └── bio-types v1.0.4
+│   │       └── bio v4.0.1 (*)
+│   └── regex-automata v0.4.18
+│       └── regex v1.13.1 (*)
+├── csv-core v0.1.13
+│   └── csv v1.4.0
+│       └── bio v4.0.1 (*)
+├── regex v1.13.1 (*)
+└── regex-automata v0.4.18 (*)
 ```
 
+Read it from the bottom of each branch up: `bio` uses `regex` and `csv`, and they use `memchr`. The `(*)` marks a crate whose subtree was already shown.
+
 :::note Every dependency is code you trust
-A dependency runs with the same permissions as your own code. Prefer popular, maintained crates, keep the list short, and don't add a crate for something you can write in ten lines.
+A dependency runs with the same permissions as your own code. Prefer popular, maintained crates, keep the list short, and don't add a crate for something you can write in ten lines. `bio` is excellent when you need its algorithms, but it brings in almost ninety crates. The `dnakit` crate you will build in the capstone needs only a FASTA reader and a few sequence functions, so it writes them itself and has no dependencies at all.
 :::
 
 :::exercise Read the requirements
-For each line of this `[dependencies]` section, write down which versions Cargo may choose.
+A colleague's sequencing pipeline has this `[dependencies]` section (the crate names are made up). For each line, write down which versions Cargo may choose.
 
 ```toml
 [dependencies]
-alpha = "2.4"
-beta = "0.3.1"
-gamma = "~1.7.2"
-delta = "=0.9.0"
-epsilon = "0.0.4"
+fastq-lite = "2.4"
+seq-align = "0.3.1"
+codon-table = "~1.7.2"
+primer-design = "=0.9.0"
+phylo-tree = "0.0.4"
 ```
 :::solution
-- `alpha = "2.4"`: `>=2.4.0, <3.0.0`.
-- `beta = "0.3.1"`: `>=0.3.1, <0.4.0`, because for `0.x` versions the minor number is the breaking one.
-- `gamma = "~1.7.2"`: `>=1.7.2, <1.8.0`.
-- `delta = "=0.9.0"`: exactly `0.9.0`.
-- `epsilon = "0.0.4"`: exactly `0.0.4` (`>=0.0.4, <0.0.5`). For `0.0.x`, every release counts as potentially breaking.
+- `fastq-lite = "2.4"`: `>=2.4.0, <3.0.0`.
+- `seq-align = "0.3.1"`: `>=0.3.1, <0.4.0`, because for `0.x` versions the minor number is the breaking one.
+- `codon-table = "~1.7.2"`: `>=1.7.2, <1.8.0`.
+- `primer-design = "=0.9.0"`: exactly `0.9.0`.
+- `phylo-tree = "0.0.4"`: exactly `0.0.4` (`>=0.0.4, <0.0.5`). For `0.0.x`, every release counts as potentially breaking.
 :::
 
-:::exercise Roll some dice
-Create a new binary package, add `rand` with `cargo add`, and write a program that rolls two six-sided dice five times and prints each pair and its total. Then run `cargo tree` and find `rand_core` in the output.
+:::rosalind GC Computing GC Content with rust-bio
+GC content is the percentage of bases in a DNA string that are `G` or `C`. It varies between species, so it helps identify where an unknown piece of DNA came from. The dataset is a FASTA file with up to 10 records; the answer is the ID of the record with the highest GC content on one line, and its GC content as a percentage on the next, such as `53.125000`. Rosalind accepts an error of up to 0.001.
+
+Solve it in the `gc-finder` package from this lesson, letting `bio` do the work: `bio::io::fasta::Reader` for the file, and `bio::seq_analysis::gc::gc_content`, which takes a byte slice and returns the GC content as a fraction between 0 and 1. Read the dataset file named on the command line, falling back to a built-in sample. For this sample:
+
+```text
+>Rosalind_0001
+CCTGCGGAAGATCGGCACTAGA
+ATCCCACTAAT
+>Rosalind_0002
+GCCGCCCAGGGCAACGAATTATGGGCG
+```
+
+the output is:
+
+```text
+Rosalind_0002
+66.666669
+```
 :::solution
 ```rust,ignore,file=src/main.rs
-fn main() {
-    for round in 1..=5 {
-        let a: u8 = rand::random_range(1..=6);
-        let b: u8 = rand::random_range(1..=6);
-        println!("round {round}: {a} + {b} = {}", a + b);
+use std::error::Error;
+
+use bio::io::fasta;
+use bio::seq_analysis::gc::gc_content;
+
+const SAMPLE: &str = ">Rosalind_0001
+CCTGCGGAAGATCGGCACTAGA
+ATCCCACTAAT
+>Rosalind_0002
+GCCGCCCAGGGCAACGAATTATGGGCG
+";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+
+    let mut best: Option<(String, f64)> = None;
+    for result in fasta::Reader::new(input.as_bytes()).records() {
+        let record = result?;
+        let gc = gc_content(record.seq()) as f64 * 100.0;
+        match best {
+            Some((_, top)) if top >= gc => {}
+            _ => best = Some((record.id().to_string(), gc)),
+        }
     }
+
+    let (id, gc) = best.ok_or("no records in the dataset")?;
+    println!("{id}\n{gc:.6}");
+    Ok(())
 }
 ```
 
-This needs the `rand` crate, so it can't run in the course's checker or the Playground as is. Run it with `cargo run` in your own project. Older versions of `rand` spell this differently (0.8 used `rand::thread_rng().gen_range(1..=6)` together with `use rand::Rng;`), so always check the docs for the version you actually have.
+This needs the `bio` crate, so it can't run in the course's checker or the Playground. Run it with `cargo run -- rosalind_gc.txt` in your own project.
+
+The exact answer for the sample is 66.666667: `gc_content` returns an `f32`, which keeps only about seven significant digits, so the last digits are slightly off. That is well within Rosalind's tolerance. The `match` keeps the best record so far and replaces it only when a record has a strictly higher GC content. Matching on `best` doesn't move the `String` out, because the pattern only copies the `f64`.
+:::
+
+:::rosalind REVC Complementing a Strand of DNA with rust-bio
+The two strands of DNA pair `A` with `T` and `C` with `G`, and run in opposite directions. The *reverse complement* of a DNA string is its partner strand read in its own direction: reverse the string and swap every base for its partner. The dataset is one DNA string; print its reverse complement on one line.
+
+Use `bio::alphabets::dna::revcomp`, which takes the bases as bytes and returns a `Vec<u8>`. Turn the result back into a `String` with `String::from_utf8`. For the sample `TTGACCATGCA`, the output is:
+
+```text
+TGCATGGTCAA
+```
+:::solution
+```rust,ignore,file=src/main.rs
+use std::error::Error;
+
+use bio::alphabets::dna;
+
+const SAMPLE: &str = "TTGACCATGCA\n";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let partner = dna::revcomp(input.trim().as_bytes());
+    println!("{}", String::from_utf8(partner)?);
+    Ok(())
+}
+```
+
+`String::from_utf8` returns a `Result`, because not every list of bytes is valid text; `?` passes on the error if it ever fails. Compare this with your own solution from earlier in the course: using a crate saves a few lines here, but costs a large dependency. For one function, writing it yourself is often the better deal; for a sequence aligner or a suffix array, a crate like `bio` saves you weeks.
 :::
 
 ```quiz
