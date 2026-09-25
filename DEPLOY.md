@@ -24,7 +24,7 @@ Cloudflare renames menu items from time to time. If a label below doesn't match 
    | Setting | Value |
    | --- | --- |
    | Project name | `learnrust` (this becomes `learnrust.pages.dev`, or similar if the name is taken) |
-   | Production branch | `main`, once this work is merged. To try it before merging, pick `claude/rust-learning-website-1el6ts`. |
+   | Production branch | `main` |
    | Framework preset | None |
    | Build command | `node tools/build.mjs` |
    | Build output directory | `dist` |
