@@ -405,98 +405,211 @@ You can implement a trait for a type only if the trait *or* the type is defined 
 
 This is called the **orphan rule**. It guarantees that two crates can never both provide conflicting implementations of the same trait for the same type. If you really need it, wrap the foreign type in a newtype (`struct Wrapper(Vec<String>);`), which is your own type, and implement the trait for that.
 
-:::exercise Describe yourself
-Define a trait `Describe` with a required method `name(&self) -> String` and a default method `describe(&self) -> String` that returns `"This is NAME."`. Implement it for two structs, `Dog` and `Robot`, overriding `describe` for `Robot` only. Then write `fn introduce_all(items: &[Box<dyn Describe>])` that prints every description.
+:::rosalind REVP Locating Restriction Sites
+Bacteria defend themselves against viruses with **restriction enzymes**, proteins that cut DNA wherever they find a particular short pattern. Many of those patterns are **reverse palindromes**: they read the same as their own reverse complement (the other strand, read in its own direction, as in REVC). `GAATTC`, the site of a famous enzyme called EcoRI, is one: reverse it to `CTTAAG`, complement that, and you get `GAATTC` back. Because the pattern is the same on both strands, the enzyme can cut both at once.
+
+Given a DNA string in FASTA format (a single record of up to 1000 bases), print the position and length of every reverse palindrome with a length between 4 and 12, one per line as `position length`. Positions are 1-based. Rosalind accepts any order; print them by position, then length, so your output is deterministic.
+
+Use traits to give the solution some structure:
+
+1. A trait `Complement` with one method, `fn complement(&self) -> Self`, implemented for both `u8` and `char`.
+2. A generic function `fn is_reverse_palindrome<T: Complement + PartialEq>(seq: &[T]) -> bool`. A sequence is a reverse palindrome when each element equals the complement of its mirror image: `seq[i] == seq[n - 1 - i].complement()` for every `i`.
+3. A struct `Site { position: usize, length: usize }` with a `Display` impl that prints `position length`, so `main` can just `println!("{site}")`.
+
+Check every start position and every length from 4 to 12 that fits, on the bytes of the sequence (`dna.as_bytes()`), since slicing bytes is cheap and never lands inside a character. For this sample:
+
+```text
+>Rosalind_6060
+TCGAATTCAGG
+CATGCATGTT
+```
+
+the output is:
+
+```text
+1 4
+3 6
+4 4
+11 6
+12 4
+12 8
+13 6
+14 4
+16 4
+```
 :::solution
 ```rust
-trait Describe {
-    fn name(&self) -> String;
+use std::error::Error;
+use std::fmt;
 
-    fn describe(&self) -> String {
-        format!("This is {}.", self.name())
+/// Things that have a partner on the opposite DNA strand.
+trait Complement {
+    fn complement(&self) -> Self;
+}
+
+impl Complement for u8 {
+    fn complement(&self) -> u8 {
+        match self {
+            b'A' => b'T',
+            b'T' => b'A',
+            b'C' => b'G',
+            b'G' => b'C',
+            other => *other,
+        }
     }
 }
 
-struct Dog {
-    name: String,
-}
-
-struct Robot {
-    model: u32,
-}
-
-impl Describe for Dog {
-    fn name(&self) -> String {
-        self.name.clone()
+impl Complement for char {
+    fn complement(&self) -> char {
+        match self {
+            'A' => 'T',
+            'T' => 'A',
+            'C' => 'G',
+            'G' => 'C',
+            other => *other,
+        }
     }
 }
 
-impl Describe for Robot {
-    fn name(&self) -> String {
-        format!("unit {}", self.model)
+/// True if `seq` reads the same as its reverse complement.
+/// Works for a slice of anything that has a complement and can be compared.
+fn is_reverse_palindrome<T: Complement + PartialEq>(seq: &[T]) -> bool {
+    let n = seq.len();
+    for i in 0..n {
+        if seq[i] != seq[n - 1 - i].complement() {
+            return false;
+        }
     }
+    true
+}
 
-    fn describe(&self) -> String {
-        format!("BEEP. I AM {}.", self.name().to_uppercase())
+/// A restriction site: where it starts (1-based) and how long it is.
+struct Site {
+    position: usize,
+    length: usize,
+}
+
+impl fmt::Display for Site {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.position, self.length)
     }
 }
 
-fn introduce_all(items: &[Box<dyn Describe>]) {
-    for item in items {
-        println!("{}", item.describe());
+fn find_sites(dna: &[u8]) -> Vec<Site> {
+    let mut sites = Vec::new();
+    for start in 0..dna.len() {
+        for length in 4..=12 {
+            if start + length > dna.len() {
+                break;
+            }
+            if is_reverse_palindrome(&dna[start..start + length]) {
+                sites.push(Site { position: start + 1, length });
+            }
+        }
     }
+    sites
 }
 
-fn main() {
-    let things: Vec<Box<dyn Describe>> = vec![
-        Box::new(Dog { name: String::from("Rex") }),
-        Box::new(Robot { model: 42 }),
-    ];
-    introduce_all(&things);
+/// Joins the sequence lines of a single-record FASTA file.
+fn fasta_sequence(text: &str) -> String {
+    let mut seq = String::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.starts_with('>') {
+            seq.push_str(line);
+        }
+    }
+    seq
+}
+
+const SAMPLE: &str = "
+>Rosalind_6060
+TCGAATTCAGG
+CATGCATGTT
+";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let dna = fasta_sequence(&input);
+    for site in find_sites(dna.as_bytes()) {
+        println!("{site}");
+    }
+    Ok(())
 }
 ```
 
 ```text
-This is Rex.
-BEEP. I AM UNIT 42.
+1 4
+3 6
+4 4
+11 6
+12 4
+12 8
+13 6
+14 4
+16 4
 ```
+
+`GAATTC` at position 3 is the EcoRI site from the description. `is_reverse_palindrome` never mentions bytes: it works on anything that implements `Complement` and `PartialEq`, so `is_reverse_palindrome(&['G', 'C'])` works too, and the compiler generates a separate, fast copy for each type. The `other => *other` arm leaves anything other than A, C, G and T unchanged, which keeps the `match` exhaustive without a panic. The parser here is simplified for single-record files: it keeps every line that isn't a header.
 :::
 
-:::exercise Display for a matrix
-Write a struct `Grid { cells: Vec<Vec<u8>> }` and implement `Display` so that each row is printed on its own line with values separated by spaces. Use `write!` for values and `writeln!(f)` for line breaks, and use `?` after each call so errors propagate. Print a 2×3 grid.
+:::exercise Display for a FASTA record
+Implement `Display` for the `Record { id: String, seq: String }` struct from the Structs lesson so that printing a record writes it back out as valid FASTA: the `>id` header line, then the sequence wrapped into lines of at most `LINE_WIDTH` bases (real tools use 60 or 70; use 10 so the output is easy to check). Every line, including the last, should end with a newline.
+
+Use `writeln!(f, ...)?` for each line, so a formatting error stops the `fmt` method straight away. Print two records, one longer than a line and one shorter, then show that `.to_string()` now works on a record for free.
 :::solution
 ```rust
 use std::fmt;
 
-struct Grid {
-    cells: Vec<Vec<u8>>,
+struct Record {
+    id: String,
+    seq: String,
 }
 
-impl fmt::Display for Grid {
+const LINE_WIDTH: usize = 10;
+
+impl fmt::Display for Record {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for row in &self.cells {
-            for (i, cell) in row.iter().enumerate() {
-                if i > 0 {
-                    write!(f, " ")?;
-                }
-                write!(f, "{cell}")?;
-            }
-            writeln!(f)?;
+        writeln!(f, ">{}", self.id)?;
+        let bytes = self.seq.as_bytes();
+        let mut start = 0;
+        while start < bytes.len() {
+            let end = (start + LINE_WIDTH).min(bytes.len());
+            // Safe to slice: DNA is ASCII, so every byte is a character boundary.
+            writeln!(f, "{}", &self.seq[start..end])?;
+            start = end;
         }
         Ok(())
     }
 }
 
 fn main() {
-    let g = Grid { cells: vec![vec![1, 2, 3], vec![4, 5, 6]] };
-    print!("{g}");
+    let records = [
+        Record { id: String::from("Rosalind_0001"), seq: String::from("GATTACAGATTACAGATTACA") },
+        Record { id: String::from("Rosalind_0002"), seq: String::from("CCGG") },
+    ];
+    for r in &records {
+        print!("{r}");
+    }
+    let text = records[1].to_string();
+    println!("{} bytes of FASTA", text.len());
 }
 ```
 
 ```text
-1 2 3
-4 5 6
+>Rosalind_0001
+GATTACAGAT
+TACAGATTAC
+A
+>Rosalind_0002
+CCGG
+20 bytes of FASTA
 ```
+
+`(start + LINE_WIDTH).min(bytes.len())` stops the last slice from running past the end. Because the `Display` impl already ends every line with a newline, `main` uses `print!` rather than `println!` to avoid blank lines between records. Implementing one trait method gave you `{}`, `format!` and `to_string()` at once; the standard library builds them all on top of `Display`.
 :::
 
 ```quiz

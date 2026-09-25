@@ -377,77 +377,151 @@ In the guard `*n < 10`, `n` is a reference (because `t` is), so `*n` reads the n
 | Loop until a pattern stops matching | `while let` |
 | Get a `bool` from a pattern | `matches!` |
 
-:::exercise FizzBuzz with a tuple match
-Write FizzBuzz for the numbers 1 to 15 using a single `match` on the tuple `(n % 3, n % 5)`. Print `FizzBuzz` when both are zero, `Fizz` when only the first is, `Buzz` when only the second is, and the number otherwise.
-:::solution
-```rust
-fn main() {
-    for n in 1..=15 {
-        match (n % 3, n % 5) {
-            (0, 0) => println!("FizzBuzz"),
-            (0, _) => println!("Fizz"),
-            (_, 0) => println!("Buzz"),
-            _ => println!("{n}"),
-        }
-    }
-}
-```
-:::
+:::rosalind PROT Translating RNA into Protein
+Cells build proteins from instructions in messenger RNA (the U-for-T copy of DNA from the RNA problem). A molecular machine reads the RNA three bases at a time. Each triple, called a **codon**, stands for one of 20 amino acids, written as single letters, and the protein is the chain of those amino acids. Three of the 64 codons, `UAA`, `UAG` and `UGA`, are **stop codons**: they mean "the protein ends here".
 
-:::exercise Commands
-Given this enum, write `fn run(cmd: &Command) -> String` using a single `match` that returns:
+Given an RNA string, print the protein it encodes as one line of letters. Translate codon by codon from the start and stop at the first stop codon (don't print anything for the stop itself).
 
-1. `"stay"` for a `Move` with `dx` and `dy` both zero.
-2. `"move right by N"` for a `Move` with `dy` zero and `dx` positive (use a guard).
-3. `"move (dx, dy)"` for any other `Move`.
-4. `"say: TEXT"` for `Say`, and `"quit"` for `Quit`.
+This is the standard codon table:
+
+| Letter | Codons | Letter | Codons |
+| --- | --- | --- | --- |
+| A | GCU GCC GCA GCG | M | AUG |
+| C | UGU UGC | N | AAU AAC |
+| D | GAU GAC | P | CCU CCC CCA CCG |
+| E | GAA GAG | Q | CAA CAG |
+| F | UUU UUC | R | CGU CGC CGA CGG AGA AGG |
+| G | GGU GGC GGA GGG | S | UCU UCC UCA UCG AGU AGC |
+| H | CAU CAC | T | ACU ACC ACA ACG |
+| I | AUU AUC AUA | V | GUU GUC GUA GUG |
+| K | AAA AAG | W | UGG |
+| L | UUA UUG CUU CUC CUA CUG | Y | UAU UAC |
+
+Write `fn amino_acid(codon: &[u8]) -> Option<char>` as one big `match`, returning `None` for stop codons. A byte string literal such as `b"UUU"` works as a pattern against a byte slice, and `|` lets one arm list several codons:
 
 ```rust,ignore
-enum Command {
-    Move { dx: i32, dy: i32 },
-    Say(String),
-    Quit,
+match codon {
+    b"UUU" | b"UUC" => Some('F'),
+    b"UUA" | b"UUG" | b"CUU" | b"CUC" | b"CUA" | b"CUG" => Some('L'),
+    // ...
+}
+```
+
+Then write `fn translate(rna: &str) -> String`. `rna.as_bytes().chunks_exact(3)` hands you the codons one at a time as `&[u8]` slices of length 3 (and ignores any leftover bytes at the end). Paste the dataset into a string constant and `.trim()` it, as in earlier lessons. For the sample `AUGGCAUCGACUGAACGGCCAAUCGAGUGCGAAUAAGGCUUA` the output is:
+
+```text
+MASTERPIECE
+```
+:::solution
+```rust
+fn amino_acid(codon: &[u8]) -> Option<char> {
+    match codon {
+        b"UUU" | b"UUC" => Some('F'),
+        b"UUA" | b"UUG" | b"CUU" | b"CUC" | b"CUA" | b"CUG" => Some('L'),
+        b"AUU" | b"AUC" | b"AUA" => Some('I'),
+        b"AUG" => Some('M'),
+        b"GUU" | b"GUC" | b"GUA" | b"GUG" => Some('V'),
+        b"UCU" | b"UCC" | b"UCA" | b"UCG" | b"AGU" | b"AGC" => Some('S'),
+        b"CCU" | b"CCC" | b"CCA" | b"CCG" => Some('P'),
+        b"ACU" | b"ACC" | b"ACA" | b"ACG" => Some('T'),
+        b"GCU" | b"GCC" | b"GCA" | b"GCG" => Some('A'),
+        b"UAU" | b"UAC" => Some('Y'),
+        b"CAU" | b"CAC" => Some('H'),
+        b"CAA" | b"CAG" => Some('Q'),
+        b"AAU" | b"AAC" => Some('N'),
+        b"AAA" | b"AAG" => Some('K'),
+        b"GAU" | b"GAC" => Some('D'),
+        b"GAA" | b"GAG" => Some('E'),
+        b"UGU" | b"UGC" => Some('C'),
+        b"UGG" => Some('W'),
+        b"CGU" | b"CGC" | b"CGA" | b"CGG" | b"AGA" | b"AGG" => Some('R'),
+        b"GGU" | b"GGC" | b"GGA" | b"GGG" => Some('G'),
+        b"UAA" | b"UAG" | b"UGA" => None, // stop codons
+        _ => None,                        // not a valid codon at all
+    }
+}
+
+fn translate(rna: &str) -> String {
+    let mut protein = String::new();
+    for codon in rna.as_bytes().chunks_exact(3) {
+        let Some(aa) = amino_acid(codon) else {
+            break; // a stop codon ends the protein
+        };
+        protein.push(aa);
+    }
+    protein
+}
+
+const RNA: &str = "
+AUGGCAUCGACUGAACGGCCAAUCGAGUGCGAAUAAGGCUUA
+";
+
+fn main() {
+    println!("{}", translate(RNA.trim()));
+}
+```
+
+```text
+MASTERPIECE
+```
+
+The `match` is exhaustive only thanks to the final `_` arm: a `&[u8]` could be any bytes at all, and the compiler cannot know your data only contains A, C, G and U. The stop codons get their own arm anyway, so a reader can see that they were handled on purpose. `let else` keeps the loop flat: either you get an amino acid, or the loop ends. The `GGCUUA` after the stop codon in the sample is never translated.
+:::
+
+:::exercise Sorting sequencing reads
+A DNA sequencer produces millions of short fragments called **reads**. Alignment software then tries to place each read at a position on a chromosome and gives it a quality score. Given this enum, write `fn describe(read: &Read) -> String` using a single `match` that returns:
+
+1. `"low quality (Q), skipped"` for any mapped read with a quality from 0 to 19. Use `@` to bind the quality.
+2. `"chrX at POSITION"` for a mapped read on chromosome 23 (the X chromosome).
+3. `"chrN at POSITION"` for any other mapped read.
+4. `"too short to place"` for an unmapped read with fewer than 20 bases (use a guard), and `"unmapped, N bases"` for any other unmapped read.
+
+```rust,ignore
+enum Read {
+    Mapped { chromosome: u8, position: u64, quality: u8 },
+    Unmapped { sequence: String },
 }
 ```
 :::solution
 ```rust
-enum Command {
-    Move { dx: i32, dy: i32 },
-    Say(String),
-    Quit,
+enum Read {
+    Mapped { chromosome: u8, position: u64, quality: u8 },
+    Unmapped { sequence: String },
 }
 
-fn run(cmd: &Command) -> String {
-    match cmd {
-        Command::Move { dx: 0, dy: 0 } => String::from("stay"),
-        Command::Move { dx, dy: 0 } if *dx > 0 => format!("move right by {dx}"),
-        Command::Move { dx, dy } => format!("move ({dx}, {dy})"),
-        Command::Say(text) => format!("say: {text}"),
-        Command::Quit => String::from("quit"),
+fn describe(read: &Read) -> String {
+    match read {
+        Read::Mapped { quality: q @ 0..=19, .. } => format!("low quality ({q}), skipped"),
+        Read::Mapped { chromosome: 23, position, .. } => format!("chrX at {position}"),
+        Read::Mapped { chromosome, position, .. } => format!("chr{chromosome} at {position}"),
+        Read::Unmapped { sequence } if sequence.len() < 20 => String::from("too short to place"),
+        Read::Unmapped { sequence } => format!("unmapped, {} bases", sequence.len()),
     }
 }
 
 fn main() {
-    let cmds = [
-        Command::Move { dx: 0, dy: 0 },
-        Command::Move { dx: 4, dy: 0 },
-        Command::Move { dx: -1, dy: 2 },
-        Command::Say(String::from("hi")),
-        Command::Quit,
+    let reads = [
+        Read::Mapped { chromosome: 7, position: 117_559_590, quality: 60 },
+        Read::Mapped { chromosome: 23, position: 1_000_000, quality: 42 },
+        Read::Mapped { chromosome: 1, position: 5_000, quality: 12 },
+        Read::Unmapped { sequence: String::from("GATTACA") },
+        Read::Unmapped { sequence: String::from("ACGTACGTACGTACGTACGTACGT") },
     ];
-    for c in &cmds {
-        println!("{}", run(c));
+    for r in &reads {
+        println!("{}", describe(r));
     }
 }
 ```
 
 ```text
-stay
-move right by 4
-move (-1, 2)
-say: hi
-quit
+chr7 at 117559590
+chrX at 1000000
+low quality (12), skipped
+too short to place
+unmapped, 24 bases
 ```
+
+The order of the arms matters: the low-quality arm must come first, otherwise the read on chromosome 1 would be described by the general "chrN" arm. Underscores in `117_559_590` are just digit separators for readability.
 :::
 
 ```quiz

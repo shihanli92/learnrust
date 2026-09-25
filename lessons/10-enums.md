@@ -285,7 +285,7 @@ fn main() {
     println!("{:?} {:?}", present.map(|n| n * 10), missing.map(|n| n * 10));
 
     // Many standard library functions return Option.
-    println!("{:?} {:?}", "hello".find('l'), "hello".find('z'));
+    println!("{:?} {:?}", "GATTACA".find("TA"), "GATTACA".find("GG"));
 }
 ```
 
@@ -293,7 +293,7 @@ fn main() {
 true false
 4 0
 Some(40) None
-Some(2) None
+Some(3) None
 ```
 
 The `|n| n * 10` syntax is a **closure**, a small anonymous function. You will study closures properly later; for now read it as "given `n`, produce `n * 10`".
@@ -357,67 +357,212 @@ Open: not possible while Locked
 
 Matching on a tuple `(self, action)` checks both values at once, and `_` is a catch-all pattern. Both are covered properly in the next lesson. The `derive` line adds `Clone`, `Copy` and `PartialEq` so that `Door` values can be copied like integers; the Traits lesson explains these.
 
-:::exercise Coins
-Define an enum `Coin` with variants `Penny`, `Nickel`, `Dime` and `Quarter`. Write a method `value_in_cents(&self) -> u32` (1, 5, 10, 25). In `main`, loop over an array of coins and print the total value.
+:::exercise A safe Base type
+DNA is written with four letters, so it is a perfect fit for an enum. Define `enum Base { A, C, G, T }` (derive `Debug, Clone, Copy, PartialEq`) and give it:
+
+1. An associated function `from_char(c: char) -> Option<Base>` that accepts upper- or lowercase letters and returns `None` for anything else. Real sequencing data contains other letters, such as `N` for "unknown base".
+2. A method `complement(self) -> Base`. In a DNA double helix, A always pairs with T and C with G, so the complement of `A` is `T`, and so on. (This is the pairing you used for REVC in lesson 07.)
+
+Then write `fn first_invalid(dna: &str) -> Option<usize>` that returns the index of the first character that is not a base, or `None` if the whole string is valid. Test it on `"GATTACA"`, `"GATNACA"` and `"gattaca"`, and print `Base::from_char('c').map(|b| b.complement())`.
 :::solution
 ```rust
-enum Coin {
-    Penny,
-    Nickel,
-    Dime,
-    Quarter,
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Base {
+    A,
+    C,
+    G,
+    T,
 }
 
-impl Coin {
-    fn value_in_cents(&self) -> u32 {
+impl Base {
+    fn from_char(c: char) -> Option<Base> {
+        match c {
+            'A' | 'a' => Some(Base::A),
+            'C' | 'c' => Some(Base::C),
+            'G' | 'g' => Some(Base::G),
+            'T' | 't' => Some(Base::T),
+            _ => None,
+        }
+    }
+
+    fn complement(self) -> Base {
         match self {
-            Coin::Penny => 1,
-            Coin::Nickel => 5,
-            Coin::Dime => 10,
-            Coin::Quarter => 25,
+            Base::A => Base::T,
+            Base::T => Base::A,
+            Base::C => Base::G,
+            Base::G => Base::C,
         }
     }
 }
 
-fn main() {
-    let purse = [Coin::Quarter, Coin::Dime, Coin::Penny, Coin::Penny, Coin::Quarter];
-    let mut total = 0;
-    for coin in &purse {
-        total += coin.value_in_cents();
+fn first_invalid(dna: &str) -> Option<usize> {
+    let mut position = 0;
+    for c in dna.chars() {
+        if Base::from_char(c).is_none() {
+            return Some(position);
+        }
+        position += 1;
     }
-    println!("total: {total} cents");
+    None
+}
+
+fn main() {
+    println!("{:?} {:?} {:?}", Base::from_char('G'), Base::from_char('t'), Base::from_char('N'));
+    println!("{:?}", Base::from_char('c').map(|b| b.complement()));
+
+    for dna in ["GATTACA", "GATNACA", "gattaca"] {
+        match first_invalid(dna) {
+            Some(i) => println!("{dna}: bad character at index {i}"),
+            None => println!("{dna}: all valid"),
+        }
+    }
 }
 ```
 
 ```text
-total: 62 cents
+Some(G) Some(T) None
+Some(G)
+GATTACA: all valid
+GATNACA: bad character at index 3
+gattaca: all valid
 ```
+
+`complement` takes `self` by value, which is fine because `Base` is `Copy`: calling it copies a tiny value instead of moving anything. Its `match` has no `_` arm, so if you ever added a fifth variant (say `N`), the compiler would point straight at this function.
 :::
 
-:::exercise Safe division
-Write `fn divide(a: i32, b: i32) -> Option<i32>` that returns `None` when `b` is zero and `Some(a / b)` otherwise. In `main`, print `divide(10, 2)` and `divide(1, 0)` with `{:?}`, then print `divide(1, 0).unwrap_or(-1)`.
+:::rosalind TRAN Transitions and Transversions
+A **point mutation** replaces one base with another. Biologists split them into two kinds. The bases A and G are **purines** (bigger, two-ring molecules) and C and T are **pyrimidines** (smaller, one ring). Swapping a purine for a purine, or a pyrimidine for a pyrimidine (A↔G, C↔T), is a **transition**. Swapping across the groups is a **transversion**. Transitions keep the molecule's shape similar, so they happen more often, and the ratio of transitions to transversions is a useful statistic when comparing genomes.
+
+You get a FASTA dataset with two DNA strings of equal length (their sequences may be wrapped over several lines). Print one number: the number of transitions divided by the number of transversions between them, as a decimal. Printing an `f64` with `{}` is precise enough.
+
+Model it with enums:
+
+1. The `Base` enum from the previous exercise, with `from_char` and a method `is_purine(self) -> bool`.
+2. `enum Mutation { Transition, Transversion }`, and `fn classify(from: Base, to: Base) -> Option<Mutation>` that returns `None` when the bases are equal (no mutation at all).
+3. The `parse_fasta` function from the GC exercise in the Structs lesson.
+
+Walk both sequences by index. `seq.as_bytes()` gives you the bytes, and `b as char` turns one into a `char` for `from_char`. For this sample:
+
+```text
+>Rosalind_3310
+GATTACAGGCTTAC
+CGTA
+>Rosalind_0072
+AATCACTGGGTCAC
+CTTG
+```
+
+there are 4 transitions and 3 transversions, so the output is:
+
+```text
+1.3333333333333333
+```
 :::solution
 ```rust
-fn divide(a: i32, b: i32) -> Option<i32> {
-    if b == 0 {
-        None
-    } else {
-        Some(a / b)
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Base {
+    A,
+    C,
+    G,
+    T,
+}
+
+impl Base {
+    fn from_char(c: char) -> Option<Base> {
+        match c {
+            'A' => Some(Base::A),
+            'C' => Some(Base::C),
+            'G' => Some(Base::G),
+            'T' => Some(Base::T),
+            _ => None,
+        }
+    }
+
+    fn is_purine(self) -> bool {
+        match self {
+            Base::A | Base::G => true,
+            Base::C | Base::T => false,
+        }
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum Mutation {
+    Transition,
+    Transversion,
+}
+
+fn classify(from: Base, to: Base) -> Option<Mutation> {
+    if from == to {
+        None
+    } else if from.is_purine() == to.is_purine() {
+        Some(Mutation::Transition)
+    } else {
+        Some(Mutation::Transversion)
+    }
+}
+
+// The FASTA parser from the Structs lesson.
+struct Record {
+    id: String,
+    seq: String,
+}
+
+fn parse_fasta(text: &str) -> Vec<Record> {
+    let mut records: Vec<Record> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('>') {
+            records.push(Record { id: line[1..].to_string(), seq: String::new() });
+        } else {
+            let last = records.len() - 1;
+            records[last].seq.push_str(line);
+        }
+    }
+    records
+}
+
+const DATASET: &str = "
+>Rosalind_3310
+GATTACAGGCTTAC
+CGTA
+>Rosalind_0072
+AATCACTGGGTCAC
+CTTG
+";
+
 fn main() {
-    println!("{:?}", divide(10, 2));
-    println!("{:?}", divide(1, 0));
-    println!("{}", divide(1, 0).unwrap_or(-1));
+    let records = parse_fasta(DATASET.trim());
+    let s1 = records[0].seq.as_bytes();
+    let s2 = records[1].seq.as_bytes();
+
+    let mut transitions = 0;
+    let mut transversions = 0;
+    for i in 0..s1.len() {
+        let from = Base::from_char(s1[i] as char);
+        let to = Base::from_char(s2[i] as char);
+        match (from, to) {
+            (Some(a), Some(b)) => match classify(a, b) {
+                Some(Mutation::Transition) => transitions += 1,
+                Some(Mutation::Transversion) => transversions += 1,
+                None => {} // same base: no mutation
+            },
+            _ => {} // skip anything that is not A, C, G or T
+        }
+    }
+
+    println!("{}", transitions as f64 / transversions as f64);
 }
 ```
 
 ```text
-Some(5)
-None
--1
+1.3333333333333333
 ```
+
+Matching on the tuple `(from, to)` handles both `Option`s at once: the arm `(Some(a), Some(b))` only runs when both characters were valid bases. `is_purine` puts two variants in one arm with `|`, which you will see more of in the next lesson. Because each question ("is it a purine?", "what kind of mutation?") has its own small function, `main` reads almost like the biology description.
 :::
 
 ```quiz

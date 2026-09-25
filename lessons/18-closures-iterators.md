@@ -191,8 +191,8 @@ You can call `next` by hand to see what a `for` loop does behind the scenes:
 
 ```rust
 fn main() {
-    let fruits = vec!["apple", "banana"];
-    let mut it = fruits.iter();
+    let codons = vec!["AUG", "UAA"];
+    let mut it = codons.iter();
     println!("{:?}", it.next());
     println!("{:?}", it.next());
     println!("{:?}", it.next());
@@ -200,8 +200,8 @@ fn main() {
 ```
 
 ```text
-Some("apple")
-Some("banana")
+Some("AUG")
+Some("UAA")
 None
 ```
 
@@ -269,34 +269,35 @@ Here is a chain that reads almost like a sentence:
 
 ```rust
 fn main() {
-    let names = ["ada", "grace", "linus", "barbara", "dennis"];
-    let years = [1815, 1906, 1969, 1939, 1941];
+    let ids = ["seq_a", "seq_b", "seq_c", "seq_d", "seq_e"];
+    let lengths = [1520, 87, 3011, 452, 2210];
 
-    for (i, (name, year)) in names.iter().zip(years.iter()).enumerate().skip(1).take(3) {
-        println!("{i}: {name} ({year})");
+    for (i, (id, len)) in ids.iter().zip(lengths.iter()).enumerate().skip(1).take(3) {
+        println!("{i}: {id} ({len} bases)");
     }
 
     let countdown: Vec<i32> = (1..=3).rev().chain(0..1).collect();
     println!("{countdown:?}");
 
-    let long_names: Vec<String> = names
+    let reads = ["acgt", "gattaca", "cc", "ttagggtta", "gcgc"];
+    let long_reads: Vec<String> = reads
         .iter()
-        .filter(|n| n.len() > 4)
-        .map(|n| n.to_uppercase())
+        .filter(|r| r.len() > 4)
+        .map(|r| r.to_uppercase())
         .collect();
-    println!("{long_names:?}");
+    println!("{long_reads:?}");
 }
 ```
 
 ```text
-1: grace (1906)
-2: linus (1969)
-3: barbara (1939)
+1: seq_b (87 bases)
+2: seq_c (3011 bases)
+3: seq_d (452 bases)
 [3, 2, 1, 0]
-["GRACE", "LINUS", "BARBARA", "DENNIS"]
+["GATTACA", "TTAGGGTTA"]
 ```
 
-Why the `|n|` in `filter` gets a `&&str`: `names.iter()` yields `&&str` (a reference to each `&str` in the array), and `filter` passes a reference to each item so it doesn't take ownership. Method calls such as `n.len()` see through the extra references automatically, so you rarely have to think about it.
+Why the `|r|` in `filter` gets a `&&str`: `reads.iter()` yields `&&str` (a reference to each `&str` in the array), and `filter` passes a reference to each item so it doesn't take ownership. Method calls such as `r.len()` see through the extra references automatically, so you rarely have to think about it.
 
 ## Consumers
 
@@ -386,7 +387,7 @@ fn main() {
 sum of even Fibonacci numbers below 1000: 798
 ```
 
-This iterator never returns `None`, so it is infinite. That is fine because adapters are lazy: `take(10)` and `take_while` stop asking for items once they have what they need. Just don't call `sum` or `collect` on the raw, unlimited iterator.
+This iterator never returns `None`, so it is infinite. That is fine because adapters are lazy: `take(10)` and `take_while` stop asking for items once they have what they need. Just don't call `sum` or `collect` on the raw, unlimited iterator. (These are also the rabbit-pair counts from FIB with *k* = 1, shifted by a month: 1, 1, 2, 3, 5...)
 
 ## Are iterators slower than loops?
 
@@ -398,63 +399,197 @@ So choose based on readability. A short chain that says "keep the valid ones, co
 If you ever compare performance yourself, use `cargo run --release`. Debug builds skip the optimisations that make iterator chains fast, so timing them is misleading.
 :::
 
-:::exercise Word lengths
-Given `let text = "the quick brown fox jumps over the lazy dog";`, use a single iterator chain for each of these:
+:::rosalind PROB Introduction to Random Strings
+How surprised should you be to find a particular sequence in a genome? A simple model treats DNA as random letters, with the odds set by the genome's GC content *x*: each position is a G with probability *x*/2, a C with probability *x*/2, and an A or T with probability (1 − *x*)/2 each. The chance that a random string matches a given sequence exactly is the product of the chances for each position. Those numbers get tiny very quickly, so biologists work with their base-10 **logarithms**, which turn the product into a sum.
 
-1. A `Vec<usize>` of the length of every word (hint: `split_whitespace`).
-2. The longest word (hint: `max_by_key`).
-3. The number of words that start with a letter after `m` in the alphabet.
+The dataset has two lines: a DNA string *s* of up to 100 bases, and up to 20 GC contents (numbers between 0 and 1) separated by spaces. For each GC content, print the common logarithm of the probability that a random string with that GC content equals *s*. Print the answers on one line, separated by spaces; three decimal places are plenty.
+
+This is a natural fit for closures and iterators:
+
+1. Write `fn log_probability(dna: &str, gc_content: f64) -> f64`. Work out `log10` of the G/C and A/T probabilities once, then `map` each base to the right one and `sum()` the results. (`f64` has a `.log10()` method.)
+2. Parse the numbers with `split_whitespace().map(|s| s.parse::<f64>())` and collect into a `Result<Vec<f64>, _>`, as in the tip above, so a malformed number becomes an error for `?`.
+3. `map` each GC content to a formatted string, `collect` into a `Vec<String>`, and `join(" ")` them.
+
+For this sample:
+
+```text
+GATTACAGC
+0.200 0.450 0.730
+```
+
+the output is:
+
+```text
+-5.990 -5.395 -6.099
+```
 :::solution
 ```rust
-fn main() {
-    let text = "the quick brown fox jumps over the lazy dog";
+use std::error::Error;
 
-    let lengths: Vec<usize> = text.split_whitespace().map(|w| w.len()).collect();
-    println!("{lengths:?}");
+const SAMPLE: &str = "GATTACAGC
+0.200 0.450 0.730
+";
 
-    let longest = text.split_whitespace().max_by_key(|w| w.len());
-    println!("{longest:?}");
+/// log10 of the probability that a random string with this GC content equals `dna`.
+fn log_probability(dna: &str, gc_content: f64) -> f64 {
+    let log_gc = (gc_content / 2.0).log10(); // chance of one particular base, G or C
+    let log_at = ((1.0 - gc_content) / 2.0).log10(); // chance of A or T
+    dna.chars()
+        .map(|base| if base == 'G' || base == 'C' { log_gc } else { log_at })
+        .sum()
+}
 
-    let late = text
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let mut lines = input.lines();
+    let dna = lines.next().ok_or("missing DNA line")?.trim();
+    let gc_contents = lines
+        .next()
+        .ok_or("missing GC-content line")?
         .split_whitespace()
-        .filter(|w| w.chars().next().is_some_and(|c| c > 'm'))
-        .count();
-    println!("{late} words start after 'm'");
+        .map(|s| s.parse::<f64>())
+        .collect::<Result<Vec<f64>, _>>()?;
+
+    let answers: Vec<String> = gc_contents
+        .iter()
+        .map(|&gc| format!("{:.3}", log_probability(dna, gc)))
+        .collect();
+    println!("{}", answers.join(" "));
+    Ok(())
 }
 ```
 
-`max_by_key` returns the *last* of several equally long maximums, so this prints `Some("jumps")`, not `Some("quick")`. The words that start after `m` are the, quick, over and the, so `late` is 4.
+```text
+-5.990 -5.395 -6.099
+```
+
+`log_probability` works out the two logarithms once, outside the closure, and the closure captures them by reference. Each answer is negative because each probability is less than 1. The middle one is the least negative, which makes sense: the sample has 4 G or C out of 9 bases, and a GC content of 0.45 is the closest of the three to that. Adding logarithms instead of multiplying probabilities also avoids a subtle bug: for a 100-base string, the raw product can be around 10⁻⁶⁰, and much longer strings would underflow an `f64` to zero.
 :::
 
-:::exercise A counting iterator
-Write a struct `Steps` with fields `current` and `end` (both `u32`) and a `step` field. Implement `Iterator` so that `Steps { current: 0, end: 20, step: 5 }` yields `0, 5, 10, 15` and then stops. Then use it with `map` to print the squares of those numbers.
+:::rosalind ORF Open Reading Frames
+Before a biologist even knows where the genes are, they can look for stretches of DNA that *could* code for a protein. An **open reading frame** (ORF) starts at a start codon, `ATG`, and continues codon by codon until the first stop codon (`TAA`, `TAG` or `TGA`, the DNA spellings of the RNA stops from PROT). A gene can sit on either strand, so ORFs must be searched for on the DNA as given and on its reverse complement (REVC), starting at any position.
+
+Given a DNA string of up to 1000 bases in FASTA format, print every **distinct** protein that an ORF could encode, one per line. Every `ATG` starts its own ORF, even one that lies inside another ORF. A start codon that never reaches a stop codon before the sequence ends does not count. Rosalind accepts any order; print the proteins sorted, so your output is deterministic.
+
+Iterator adapters keep this short:
+
+- The ORF start positions on a strand are `(0..len).filter(|&i| bytes[i..].starts_with(b"ATG"))`. Scanning every position covers all three reading frames at once.
+- `filter_map` is `map` and `filter` in one: its closure returns an `Option`, and only the `Some` values come out. Use it with `fn translate_orf(dna: &[u8]) -> Option<String>`, which returns `None` if there is no stop codon.
+- The reverse complement is `chars().rev().map(...)` collected into a `String`.
+- `chain` the proteins from both strands and `collect` them into a `BTreeSet<String>`. A `BTreeSet` is to `HashSet` what `BTreeMap` is to `HashMap`: it removes duplicates **and** keeps its items sorted.
+
+For the codon table, adapt the compact version from SPLC in the Custom Errors lesson to DNA letters (base order T, C, A, G), or your `match` from the Pattern Matching lesson with `T` in place of `U`. For this sample:
+
+```text
+>Rosalind_3812
+CCATGCCCATGAAATAGGTCACCACA
+TTATGGGGCATGAAATGA
+```
+
+the output is:
+
+```text
+MK
+MPMK
+MW
+```
 :::solution
 ```rust
-struct Steps {
-    current: u32,
-    end: u32,
-    step: u32,
+use std::collections::BTreeSet;
+use std::error::Error;
+
+/// The standard codon table for DNA codons, numbered in base order T, C, A, G
+/// (TTT is 0, TTC is 1, ... GGG is 63). '*' marks the stop codons.
+const AMINO_ACIDS: &[u8; 64] =
+    b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
+
+fn amino_acid(codon: &[u8]) -> char {
+    let index = codon.iter().fold(0, |acc, &base| {
+        let digit = match base {
+            b'T' => 0,
+            b'C' => 1,
+            b'A' => 2,
+            _ => 3, // b'G'
+        };
+        acc * 4 + digit
+    });
+    AMINO_ACIDS[index] as char
 }
 
-impl Iterator for Steps {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<u32> {
-        if self.current >= self.end {
-            return None;
+/// Translates from the start of `dna` up to the first stop codon.
+/// Returns None if the sequence runs out before a stop codon: that's not an ORF.
+fn translate_orf(dna: &[u8]) -> Option<String> {
+    let mut protein = String::new();
+    for codon in dna.chunks_exact(3) {
+        match amino_acid(codon) {
+            '*' => return Some(protein),
+            aa => protein.push(aa),
         }
-        let value = self.current;
-        self.current += self.step;
-        Some(value)
     }
+    None
 }
 
-fn main() {
-    let steps = Steps { current: 0, end: 20, step: 5 };
-    let squares: Vec<u32> = steps.map(|n| n * n).collect();
-    println!("{squares:?}"); // [0, 25, 100, 225]
+/// Every protein from an ORF that starts somewhere on this strand.
+fn orf_proteins(strand: &str) -> Vec<String> {
+    let bytes = strand.as_bytes();
+    (0..bytes.len())
+        .filter(|&i| bytes[i..].starts_with(b"ATG"))
+        .filter_map(|i| translate_orf(&bytes[i..]))
+        .collect()
+}
+
+fn reverse_complement(dna: &str) -> String {
+    dna.chars()
+        .rev()
+        .map(|base| match base {
+            'A' => 'T',
+            'T' => 'A',
+            'C' => 'G',
+            'G' => 'C',
+            other => other,
+        })
+        .collect()
+}
+
+const SAMPLE: &str = "
+>Rosalind_3812
+CCATGCCCATGAAATAGGTCACCACA
+TTATGGGGCATGAAATGA
+";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let dna: String = input
+        .lines()
+        .filter(|line| !line.starts_with('>'))
+        .map(|line| line.trim())
+        .collect();
+    let reverse = reverse_complement(&dna);
+
+    let proteins: BTreeSet<String> = orf_proteins(&dna)
+        .into_iter()
+        .chain(orf_proteins(&reverse))
+        .collect();
+    for protein in &proteins {
+        println!("{protein}");
+    }
+    Ok(())
 }
 ```
+
+```text
+MK
+MPMK
+MW
+```
+
+`MPMK` starts at the first `ATG`, and the `ATG` inside it starts `MK`. A second `MK` appears near the end (`ATGAAATGA`), and the set quietly drops the duplicate. `MW` is on the reverse strand: `TCACCACAT` in the sample (across the line break) reads `ATGTGGTGA` backwards and complemented. The `ATG` of `ATGGGGCAT...` never reaches a stop codon in its frame, so `translate_orf` returns `None` and `filter_map` leaves it out. `fold` in `amino_acid` turns three bases into a number from 0 to 63, the same arithmetic as the SPLC loop, written as a single consumer.
 :::
 
 ```quiz

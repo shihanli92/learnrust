@@ -2,7 +2,7 @@
 title: Smart Pointers
 module: Abstraction
 summary: Put data on the heap with Box, clean up with Drop, and share or mutate data in ways plain references can't with Rc and RefCell.
-minutes: 35
+minutes: 40
 ---
 
 A **pointer** is a value that holds the address of some other data. You already use the simplest kind all the time: references, `&T` and `&mut T`. They borrow data and do nothing else.
@@ -332,69 +332,267 @@ Notice that `pay` takes `&self`, not `&mut self`, yet it changes the balance. Th
 | Several owners who can all mutate, one thread | `Rc<RefCell<T>>` |
 | Several owners across threads | `Arc<T>`, plus `Mutex<T>` to mutate |
 
-:::exercise An expression tree
-Define `enum Expr { Num(i64), Add(Box<Expr>, Box<Expr>), Mul(Box<Expr>, Box<Expr>) }` and write `fn eval(e: &Expr) -> i64`. Build the expression `(2 + 3) * 4` and print its value.
+:::rosalind TRIE Introduction to Pattern Matching
+Searching a genome for thousands of short patterns one at a time is slow. A **trie** (from re*trie*val, usually pronounced "try") stores all the patterns in one tree, so the search can check them together. Each edge is labelled with one base, and each pattern is spelled out by a path from the root. Patterns that start the same way share the start of their path: `GATTC` and `GATA` share the edges for `G`, `A` and `T`, then split.
+
+The dataset has up to 100 DNA strings, one per line, each up to 100 bases long, and none is a prefix of another. Build their trie and print its **adjacency list**: one line `parent child symbol` for every edge. The root must be node 1; the other nodes can be numbered 2, 3, 4, ... in any order, and the lines can come in any order. Numbering nodes in the order you create them is the natural choice.
+
+A trie is a recursive type, so it needs a `Box`:
+
+```rust,ignore
+struct Node {
+    label: usize,
+    children: [Option<Box<Node>>; 4], // one slot each for A, C, G, T
+}
+```
+
+Without the `Box`, a `Node` would contain four more `Node`s inline, each containing four more, and so on: the same infinite-size error as the `List` above.
+
+To insert a string, start with a `&mut Node` pointing at the root and walk down one base at a time. If the slot for the base is `None`, fill it with a new boxed node (with the next label). Then move your `&mut` down into the child with `node.children[i].as_mut().unwrap()`. To print, write a recursive function that prints each edge from a node and then recurses into the child. For this sample:
+
+```text
+GATTC
+GACA
+TAGC
+GATA
+```
+
+one correct output is:
+
+```text
+1 2 G
+2 3 A
+3 7 C
+7 8 A
+3 4 T
+4 13 A
+4 5 T
+5 6 C
+1 9 T
+9 10 A
+10 11 G
+11 12 C
+```
 :::solution
 ```rust
-enum Expr {
-    Num(i64),
-    Add(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
+use std::error::Error;
+
+const BASES: [char; 4] = ['A', 'C', 'G', 'T'];
+
+struct Node {
+    label: usize,
+    // One slot per base, in the order of BASES. Each child is owned through a Box.
+    children: [Option<Box<Node>>; 4],
 }
 
-fn eval(e: &Expr) -> i64 {
-    match e {
-        Expr::Num(n) => *n,
-        Expr::Add(a, b) => eval(a) + eval(b),
-        Expr::Mul(a, b) => eval(a) * eval(b),
+impl Node {
+    fn new(label: usize) -> Self {
+        Node { label, children: [None, None, None, None] }
+    }
+}
+
+fn base_index(base: char) -> Option<usize> {
+    BASES.iter().position(|&b| b == base)
+}
+
+struct Trie {
+    root: Node,
+    node_count: usize,
+}
+
+impl Trie {
+    fn new() -> Self {
+        Trie { root: Node::new(1), node_count: 1 }
+    }
+
+    fn insert(&mut self, word: &str) -> Result<(), String> {
+        let mut node = &mut self.root;
+        for base in word.chars() {
+            let i = base_index(base).ok_or(format!("not a DNA base: {base:?}"))?;
+            if node.children[i].is_none() {
+                self.node_count += 1;
+                node.children[i] = Some(Box::new(Node::new(self.node_count)));
+            }
+            // Step down into the child. `as_mut` gives an Option<&mut Box<Node>>,
+            // and `unwrap` is safe because the slot was filled just above.
+            node = node.children[i].as_mut().unwrap();
+        }
+        Ok(())
+    }
+}
+
+/// Walks the tree depth-first, printing one `parent child symbol` line per edge.
+fn print_edges(node: &Node) {
+    for (i, slot) in node.children.iter().enumerate() {
+        if let Some(child) = slot {
+            println!("{} {} {}", node.label, child.label, BASES[i]);
+            print_edges(child);
+        }
+    }
+}
+
+const SAMPLE: &str = "GATTC
+GACA
+TAGC
+GATA
+";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let mut trie = Trie::new();
+    for line in input.lines() {
+        let word = line.trim();
+        if !word.is_empty() {
+            trie.insert(word)?;
+        }
+    }
+    print_edges(&trie.root);
+    Ok(())
+}
+```
+
+```text
+1 2 G
+2 3 A
+3 7 C
+7 8 A
+3 4 T
+4 13 A
+4 5 T
+5 6 C
+1 9 T
+9 10 A
+10 11 G
+11 12 C
+```
+
+Node 13 is the `A` of `GATA`, created last but printed early, because the printer walks the tree depth-first and visits children in A, C, G, T order. Rosalind accepts that. `self.node_count += 1` is allowed while `node` mutably borrows `self.root` because the compiler tracks the two fields separately. When the `Trie` is dropped, each `Box` drops its node, which drops its children, so the whole tree is freed with no cleanup code.
+
+There is a popular alternative: an **arena**. Keep every node in one `Vec` and store children as indexes into it instead of boxes:
+
+```rust
+const BASES: [char; 4] = ['A', 'C', 'G', 'T'];
+
+/// Every node lives in one Vec, and children are indexes into it.
+/// Node number = index + 1, so the root (index 0) is node 1.
+struct Trie {
+    children: Vec<[Option<usize>; 4]>,
+}
+
+impl Trie {
+    fn insert(&mut self, word: &str) {
+        let mut node = 0;
+        for base in word.chars() {
+            let i = BASES.iter().position(|&b| b == base).expect("not a DNA base");
+            node = match self.children[node][i] {
+                Some(child) => child,
+                None => {
+                    let child = self.children.len();
+                    self.children.push([None; 4]);
+                    self.children[node][i] = Some(child);
+                    println!("{} {} {}", node + 1, child + 1, base); // print each edge as it's created
+                    child
+                }
+            };
+        }
     }
 }
 
 fn main() {
-    let expr = Expr::Mul(
-        Box::new(Expr::Add(Box::new(Expr::Num(2)), Box::new(Expr::Num(3)))),
-        Box::new(Expr::Num(4)),
-    );
-    println!("(2 + 3) * 4 = {}", eval(&expr)); // 20
+    let mut trie = Trie { children: vec![[None; 4]] }; // just the root
+    for word in ["GATTC", "GACA", "TAGC", "GATA"] {
+        trie.insert(word);
+    }
 }
 ```
 
-`eval(a)` passes a `&Box<Expr>` where `&Expr` is expected. Deref coercion takes care of it.
+```text
+1 2 G
+2 3 A
+3 4 T
+4 5 T
+5 6 C
+3 7 C
+7 8 A
+1 9 T
+9 10 A
+10 11 G
+11 12 C
+4 13 A
+```
+
+Walking down is now just `node = child`, a number, so there are no `&mut` references to juggle, node numbers come for free, and all the nodes sit together in memory with a single growing allocation. The price is that the compiler no longer checks that an index points at a real node, and removing nodes gets awkward. Boxes model "this node owns its children" directly and suit trees that change shape; arenas suit trees that only ever grow, like this one, and graphs where a node can have several parents.
 :::
 
-:::exercise A shared log
-Create a `Rc<RefCell<Vec<String>>>` log. Write a struct `Worker { name: String, log: Rc<RefCell<Vec<String>>> }` with a method `fn work(&self)` that pushes a message like `"alice did some work"` into the log. Make two workers that share the log, call `work` on each, then print every line of the log and the final `Rc::strong_count`.
+:::exercise A shared base tally
+A sequencing machine reads DNA on several **lanes** at once, and you want one running count of A, C, G and T across all of them (the counts from the DNA problem, but for the whole run). Write:
+
+```rust,ignore
+struct Lane {
+    name: String,
+    tally: Rc<RefCell<[u64; 4]>>,
+}
+```
+
+with a method `fn read(&self, dna: &str)` that adds the bases of `dna` to the shared tally and prints how many bases the lane read. Make two lanes sharing one tally, have them read a few strings, then print the four totals separated by spaces and the tally's `Rc::strong_count`.
+
+Writing `Rc<RefCell<[u64; 4]>>` everywhere is noisy. A **type alias** gives it a short name: `type Tally = Rc<RefCell<[u64; 4]>>;`. It's just another name for the same type.
 :::solution
 ```rust
 use std::cell::RefCell;
 use std::rc::Rc;
 
-struct Worker {
+/// Counts of A, C, G and T, shared by every lane.
+type Tally = Rc<RefCell<[u64; 4]>>;
+
+struct Lane {
     name: String,
-    log: Rc<RefCell<Vec<String>>>,
+    tally: Tally,
 }
 
-impl Worker {
-    fn work(&self) {
-        self.log.borrow_mut().push(format!("{} did some work", self.name));
+impl Lane {
+    fn read(&self, dna: &str) {
+        let mut counts = self.tally.borrow_mut();
+        for base in dna.chars() {
+            match base {
+                'A' => counts[0] += 1,
+                'C' => counts[1] += 1,
+                'G' => counts[2] += 1,
+                'T' => counts[3] += 1,
+                _ => {}
+            }
+        }
+        println!("{} read {} bases", self.name, dna.len());
     }
 }
 
 fn main() {
-    let log = Rc::new(RefCell::new(Vec::new()));
-    let alice = Worker { name: String::from("alice"), log: Rc::clone(&log) };
-    let bob = Worker { name: String::from("bob"), log: Rc::clone(&log) };
+    let tally: Tally = Rc::new(RefCell::new([0; 4]));
+    let lane1 = Lane { name: String::from("lane 1"), tally: Rc::clone(&tally) };
+    let lane2 = Lane { name: String::from("lane 2"), tally: Rc::clone(&tally) };
 
-    alice.work();
-    bob.work();
-    alice.work();
+    lane1.read("GATTACA");
+    lane2.read("CCGGTA");
+    lane1.read("TTAG");
 
-    for line in log.borrow().iter() {
-        println!("{line}");
-    }
-    println!("owners: {}", Rc::strong_count(&log)); // 3
+    let counts = tally.borrow();
+    println!("{} {} {} {}", counts[0], counts[1], counts[2], counts[3]);
+    println!("owners: {}", Rc::strong_count(&tally));
 }
 ```
+
+```text
+lane 1 read 7 bases
+lane 2 read 6 bases
+lane 1 read 4 bases
+5 3 4 5
+owners: 3
+```
+
+`read` takes `&self` yet changes the counts: that's interior mutability through the `RefCell`. The `borrow_mut()` guard lives until the end of `read`, so no other borrow of the tally may happen during the call; here none does. The owner count is 3 because `main` still holds `tally`, alongside the clone in each lane.
 :::
 
 ```quiz

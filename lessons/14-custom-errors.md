@@ -2,7 +2,7 @@
 title: Custom Error Types
 module: Handling failure
 summary: Design your own error enums, implement Display and Error for them, and let ? convert between error types automatically.
-minutes: 35
+minutes: 40
 ---
 
 In the last lesson your fallible functions returned `Result<T, String>` or borrowed an error type from the standard library, such as `ParseIntError`. Strings are fine for quick programs, but they have a weakness: the caller can only *read* them. If the caller wants to react differently to "file not found" and "number out of range", it has to compare message text, which breaks the moment someone rewords a message.
@@ -274,112 +274,309 @@ You'll learn to add dependencies like these in the Cargo lesson.
 
 Since your goal is to publish a crate, the error-enum approach is the one to master. It becomes part of your crate's public API, so choose variant names that will make sense to users.
 
-:::exercise A bank error
-Write an error enum `BankError` with variants `InsufficientFunds { needed: u64, available: u64 }` and `AccountLocked`. Derive `Debug`, implement `Display` with friendly messages and implement `std::error::Error` (an empty `impl` is fine). Then write `fn withdraw(balance: u64, amount: u64, locked: bool) -> Result<u64, BankError>` that returns the new balance. In `main`, try three withdrawals (one succeeds, one is too large, one on a locked account) and print each result with `{}` for errors.
+:::exercise A FASTA parser with real errors
+Your FASTA parser from the Structs lesson quietly assumed the input was perfect. A library parser should instead say exactly what is wrong and where. Write one that reports problems through an error enum:
+
+```rust,ignore
+#[derive(Debug)]
+enum FastaError {
+    Io(std::io::Error),
+    MissingHeader { line: usize },
+    InvalidBase { id: String, position: usize, found: char },
+}
+```
+
+1. Implement `Display` with a message for each variant (`line` is 1-based; `position` is the 1-based position in that record's sequence). Implement `Error`, with `source()` returning the inner `io::Error` for `Io`.
+2. Implement `From<std::io::Error> for FastaError`.
+3. Write `fn parse_fasta(text: &str) -> Result<Vec<Record>, FastaError>`. Return `MissingHeader` for a sequence line that comes before any `>` line, and `InvalidBase` for any character other than `A`, `C`, `G` or `T`.
+4. Write `fn read_fasta(path: &str) -> Result<Vec<Record>, FastaError>` that reads the file with `std::fs::read_to_string(path)?` and parses it. Thanks to your `From` impl, the `?` converts the I/O error for you.
+
+Test it on a valid input, one that starts with a sequence line, one with an `X` in a sequence, and a file that doesn't exist. Two helpers make the parser tidy: `line.strip_prefix('>')` returns `Some(rest)` if the line starts with `>` and `None` otherwise, and `let ... else` on `records.last_mut()` handles the "no header yet" case.
 :::solution
 ```rust
+use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
-enum BankError {
-    InsufficientFunds { needed: u64, available: u64 },
-    AccountLocked,
+struct Record {
+    id: String,
+    seq: String,
 }
 
-impl fmt::Display for BankError {
+#[derive(Debug)]
+enum FastaError {
+    Io(std::io::Error),
+    MissingHeader { line: usize },
+    InvalidBase { id: String, position: usize, found: char },
+}
+
+impl fmt::Display for FastaError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            BankError::InsufficientFunds { needed, available } => {
-                write!(f, "insufficient funds: needed {needed}, available {available}")
+            FastaError::Io(_) => write!(f, "could not read the FASTA file"),
+            FastaError::MissingHeader { line } => {
+                write!(f, "line {line}: sequence data before the first '>' header")
             }
-            BankError::AccountLocked => write!(f, "the account is locked"),
+            FastaError::InvalidBase { id, position, found } => {
+                write!(f, "record {id}: invalid base {found:?} at position {position}")
+            }
         }
     }
 }
 
-impl std::error::Error for BankError {}
+impl Error for FastaError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            FastaError::Io(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
-fn withdraw(balance: u64, amount: u64, locked: bool) -> Result<u64, BankError> {
-    if locked {
-        return Err(BankError::AccountLocked);
+impl From<std::io::Error> for FastaError {
+    fn from(e: std::io::Error) -> Self {
+        FastaError::Io(e)
     }
-    if amount > balance {
-        return Err(BankError::InsufficientFunds { needed: amount, available: balance });
+}
+
+fn parse_fasta(text: &str) -> Result<Vec<Record>, FastaError> {
+    let mut records: Vec<Record> = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(id) = line.strip_prefix('>') {
+            records.push(Record { id: id.to_string(), seq: String::new() });
+            continue;
+        }
+        let Some(record) = records.last_mut() else {
+            return Err(FastaError::MissingHeader { line: i + 1 });
+        };
+        for c in line.chars() {
+            if !matches!(c, 'A' | 'C' | 'G' | 'T') {
+                return Err(FastaError::InvalidBase {
+                    id: record.id.clone(),
+                    position: record.seq.len() + 1,
+                    found: c,
+                });
+            }
+            record.seq.push(c);
+        }
     }
-    Ok(balance - amount)
+    Ok(records)
+}
+
+fn read_fasta(path: &str) -> Result<Vec<Record>, FastaError> {
+    let text = std::fs::read_to_string(path)?; // io::Error -> FastaError via From
+    parse_fasta(&text)
 }
 
 fn main() {
-    for (amount, locked) in [(30, false), (500, false), (10, true)] {
-        match withdraw(100, amount, locked) {
-            Ok(left) => println!("withdrew {amount}, {left} left"),
-            Err(e) => println!("failed: {e}"),
+    let inputs = [
+        ">seq1\nGATT\nACA\n>seq2\nCCGG\n",
+        "GATTACA\n>seq1\nCCGG\n",
+        ">seq1\nGATT\nACXA\n",
+    ];
+    for text in inputs {
+        match parse_fasta(text) {
+            Ok(records) => println!("ok: {records:?}"),
+            Err(e) => println!("error: {e}"),
+        }
+    }
+
+    match read_fasta("no_such_file.fasta") {
+        Ok(_) => println!("unexpected success"),
+        Err(e) => {
+            println!("error: {e}");
+            if let Some(cause) = e.source() {
+                println!("  caused by: {cause}");
+            }
         }
     }
 }
 ```
 
 ```text
-withdrew 30, 70 left
-failed: insufficient funds: needed 500, available 100
-failed: the account is locked
+ok: [Record { id: "seq1", seq: "GATTACA" }, Record { id: "seq2", seq: "CCGG" }]
+error: line 1: sequence data before the first '>' header
+error: record seq1: invalid base 'X' at position 7
+error: could not read the FASTA file
+  caused by: No such file or directory (os error 2)
 ```
+
+Each variant carries exactly the details needed to find the problem in a thousand-line file, and a caller could `match` on `InvalidBase` to, say, skip bad records instead of giving up. `enumerate()` numbers the lines from 0, hence `i + 1`. `record.id.clone()` is needed because the error must own its data: it may outlive `records`, which is dropped when the function returns. This parser, error type and all, is very close to the `fasta` module of `dnakit`, the crate you'll build in lesson 25.
 :::
 
-:::exercise Convert with From
-Start from your `BankError` and add a variant `BadAmount(std::num::ParseIntError)`. Implement `From<ParseIntError> for BankError`, then write `fn withdraw_text(balance: u64, amount: &str) -> Result<u64, BankError>` that parses `amount` with `?` and subtracts it (return `InsufficientFunds` if it's too large). Print the results for `"40"` and `"forty"`.
+:::rosalind SPLC RNA Splicing
+In plants and animals, genes are interrupted by stretches of DNA that don't code for anything, called **introns**. The coding pieces between them are **exons**. Before a protein is made, the cell cuts the introns out of the RNA copy and glues the exons together, a step called **splicing**. Only then is the RNA translated into protein.
+
+The dataset is a FASTA file. The first record is the gene; every record after it is an intron (each occurs in the gene exactly once). Remove the introns from the gene, transcribe the result to RNA (T becomes U), translate it with the codon table, and print the protein on one line. Stop at the stop codon, as in PROT.
+
+Use your parser from the previous exercise, and read the dataset with `read_fasta` when a file name is given, falling back to `parse_fasta(SAMPLE)` otherwise. Both return a `FastaError`, which `?` in `main` turns into a `Box<dyn Error>`.
+
+Two useful methods: `records.split_first()` returns `Some((first, rest))` for a non-empty slice, and `text.replace(pattern, "")` deletes every occurrence of `pattern`. For the translation, reuse `amino_acid` from the Pattern Matching lesson, or try the compact version in the solution.
+
+For this sample:
+
+```text
+>Rosalind_4021
+ATGTACGGTCATTCAGAGCACTGACCTTGG
+AAACGTTATTAA
+>Rosalind_1180
+GGTCATTCAG
+>Rosalind_7732
+CCTTGGAA
+```
+
+the output is:
+
+```text
+MYSTERY
+```
 :::solution
 ```rust
+use std::error::Error;
 use std::fmt;
-use std::num::ParseIntError;
 
 #[derive(Debug)]
-enum BankError {
-    InsufficientFunds { needed: u64, available: u64 },
-    BadAmount(ParseIntError),
+struct Record {
+    id: String,
+    seq: String,
 }
 
-impl fmt::Display for BankError {
+#[derive(Debug)]
+enum FastaError {
+    Io(std::io::Error),
+    MissingHeader { line: usize },
+    InvalidBase { id: String, position: usize, found: char },
+}
+
+impl fmt::Display for FastaError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            BankError::InsufficientFunds { needed, available } => {
-                write!(f, "insufficient funds: needed {needed}, available {available}")
+            FastaError::Io(_) => write!(f, "could not read the FASTA file"),
+            FastaError::MissingHeader { line } => {
+                write!(f, "line {line}: sequence data before the first '>' header")
             }
-            BankError::BadAmount(e) => write!(f, "bad amount: {e}"),
+            FastaError::InvalidBase { id, position, found } => {
+                write!(f, "record {id}: invalid base {found:?} at position {position}")
+            }
         }
     }
 }
 
-impl std::error::Error for BankError {}
-
-impl From<ParseIntError> for BankError {
-    fn from(e: ParseIntError) -> Self {
-        BankError::BadAmount(e)
-    }
-}
-
-fn withdraw_text(balance: u64, amount: &str) -> Result<u64, BankError> {
-    let amount: u64 = amount.trim().parse()?;
-    if amount > balance {
-        return Err(BankError::InsufficientFunds { needed: amount, available: balance });
-    }
-    Ok(balance - amount)
-}
-
-fn main() {
-    for text in ["40", "forty"] {
-        match withdraw_text(100, text) {
-            Ok(left) => println!("{text}: {left} left"),
-            Err(e) => println!("{text}: {e}"),
+impl Error for FastaError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            FastaError::Io(e) => Some(e),
+            _ => None,
         }
     }
+}
+
+impl From<std::io::Error> for FastaError {
+    fn from(e: std::io::Error) -> Self {
+        FastaError::Io(e)
+    }
+}
+
+fn parse_fasta(text: &str) -> Result<Vec<Record>, FastaError> {
+    let mut records: Vec<Record> = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(id) = line.strip_prefix('>') {
+            records.push(Record { id: id.to_string(), seq: String::new() });
+            continue;
+        }
+        let Some(record) = records.last_mut() else {
+            return Err(FastaError::MissingHeader { line: i + 1 });
+        };
+        for c in line.chars() {
+            if !matches!(c, 'A' | 'C' | 'G' | 'T') {
+                return Err(FastaError::InvalidBase {
+                    id: record.id.clone(),
+                    position: record.seq.len() + 1,
+                    found: c,
+                });
+            }
+            record.seq.push(c);
+        }
+    }
+    Ok(records)
+}
+
+fn read_fasta(path: &str) -> Result<Vec<Record>, FastaError> {
+    let text = std::fs::read_to_string(path)?; // io::Error -> FastaError via From
+    parse_fasta(&text)
+}
+
+/// The codon table from the Pattern Matching lesson, squeezed into one string.
+/// Codons are numbered in the base order U, C, A, G: UUU is 0, UUC is 1, ... GGG is 63.
+const AMINO_ACIDS: &[u8; 64] =
+    b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
+
+fn translate(rna: &str) -> String {
+    let mut protein = String::new();
+    for codon in rna.as_bytes().chunks_exact(3) {
+        let mut index = 0;
+        for &base in codon {
+            let digit = match base {
+                b'U' => 0,
+                b'C' => 1,
+                b'A' => 2,
+                _ => 3, // b'G'; the parser already rejected anything else
+            };
+            index = index * 4 + digit;
+        }
+        let amino = AMINO_ACIDS[index] as char;
+        if amino == '*' {
+            break; // stop codon
+        }
+        protein.push(amino);
+    }
+    protein
+}
+
+const SAMPLE: &str = "
+>Rosalind_4021
+ATGTACGGTCATTCAGAGCACTGACCTTGG
+AAACGTTATTAA
+>Rosalind_1180
+GGTCATTCAG
+>Rosalind_7732
+CCTTGGAA
+";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let records = match std::env::args().nth(1) {
+        Some(path) => read_fasta(&path)?,
+        None => parse_fasta(SAMPLE)?,
+    };
+    let Some((gene, introns)) = records.split_first() else {
+        return Err("the dataset has no records".into());
+    };
+
+    let mut dna = gene.seq.clone();
+    for intron in introns {
+        dna = dna.replace(&intron.seq, "");
+    }
+    let rna = dna.replace('T', "U");
+    println!("{}", translate(&rna));
+    Ok(())
 }
 ```
 
 ```text
-40: 60 left
-forty: bad amount: invalid digit found in string
+MYSTERY
 ```
+
+The compact `translate` treats each codon as a three-digit number in base 4, with U, C, A and G as the digits 0 to 3. So `UUU` is 0, `UUC` is 1 and `GGG` is 63, and that number indexes a 64-letter string where `*` marks the stop codons. It is the same table as the big `match`, just shorter to type; the `match` is easier to check by eye.
+
+Notice how little error handling `main` needs. The parser reports bad input precisely, `?` converts every error on the way up, and an empty file becomes a clear message via `.into()` rather than a panic.
 :::
 
 ```quiz

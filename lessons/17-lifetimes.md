@@ -254,67 +254,247 @@ You'll also see `'static` as a *bound*, as in `T: 'static` or `dyn Error + 'stat
 
 To sum up, most of the time you'll write no lifetime annotations at all. When you do, it'll usually be one of two situations: a function returning a reference borrowed from one of several parameters, or a struct holding a reference. In both cases the compiler's help message usually suggests exactly the annotation you need. If annotating starts to feel like a fight, that's a sign to own the data instead of borrowing it.
 
-:::exercise Longest line
-Write `fn longest_line<'a>(text: &'a str) -> &'a str` that returns the longest line in `text` (use `text.lines()`, and return the first one on ties). Then remove the `'a` annotations and confirm it still compiles, thanks to elision rule 2.
+:::rosalind LCSM Finding a Shared Motif
+A **motif** is a short stretch of DNA that shows up again and again, often because it does something important, such as marking where a protein should bind. One way to hunt for motifs is to take the same region from several related organisms and look for the longest piece of sequence they all share.
+
+Given a FASTA dataset of up to 100 DNA strings (each up to 1000 bases, possibly wrapped over several lines), print one **longest common substring**: a run of consecutive bases that appears in every string and is as long as possible. If several share the longest length, any one of them is accepted.
+
+The heart of the solution returns a slice of one of the input strings, with no copying:
+
+```rust,ignore
+fn longest_common_substring<'a>(seqs: &[&'a str]) -> &'a str
+```
+
+Here the annotation is required and does real work. The parameter contains *two* references: the outer slice `&[...]` and the `&str`s inside it. Elision can't guess which one the result borrows from, so you say it: the result lives as long as the strings (`'a`), not as long as the temporary list of them. That means the caller can drop the `Vec<&str>` and keep the answer.
+
+A simple approach that is fast enough:
+
+1. Any common substring must appear in the shortest sequence, so take substrings of that one as candidates.
+2. Try lengths 1, 2, 3 and so on. For each length, look for any candidate that every sequence `contains`.
+3. As soon as a length has no common candidate, stop: if no common substring of length *L* exists, none of length *L* + 1 can, since it would contain one of length *L*. The last one you found is the answer.
+
+For this sample:
+
+```text
+>Rosalind_2801
+TTAGGCATCGAT
+>Rosalind_0539
+CATCGGTAGGCA
+>Rosalind_6114
+GGTAGGCTTCATCG
+```
+
+the output is:
+
+```text
+TAGGC
+```
+
+`CATCG` also appears in all three and has the same length, so it would be accepted too.
 :::solution
 ```rust
-fn longest_line(text: &str) -> &str {
-    let mut best = "";
+use std::error::Error;
+
+struct Record {
+    id: String,
+    seq: String,
+}
+
+fn parse_fasta(text: &str) -> Vec<Record> {
+    let mut records: Vec<Record> = Vec::new();
     for line in text.lines() {
-        if line.len() > best.len() {
-            best = line;
+        let line = line.trim();
+        if let Some(id) = line.strip_prefix('>') {
+            records.push(Record { id: id.to_string(), seq: String::new() });
+        } else if let Some(last) = records.last_mut() {
+            last.seq.push_str(line);
+        }
+    }
+    records
+}
+
+/// Is `motif` a substring of every sequence?
+fn in_all(motif: &str, seqs: &[&str]) -> bool {
+    for s in seqs {
+        if !s.contains(motif) {
+            return false;
+        }
+    }
+    true
+}
+
+/// One longest substring shared by all of `seqs`, borrowed from one of them.
+fn longest_common_substring<'a>(seqs: &[&'a str]) -> &'a str {
+    if seqs.is_empty() {
+        return "";
+    }
+    // Every common substring is part of the shortest sequence, so search that one.
+    let mut shortest = seqs[0];
+    for &s in seqs {
+        if s.len() < shortest.len() {
+            shortest = s;
+        }
+    }
+
+    let mut best = "";
+    for len in 1..=shortest.len() {
+        let mut found = None;
+        for start in 0..=shortest.len() - len {
+            let candidate = &shortest[start..start + len];
+            if in_all(candidate, seqs) {
+                found = Some(candidate);
+                break;
+            }
+        }
+        match found {
+            Some(motif) => best = motif,
+            // No common substring of this length means none of any longer length either.
+            None => break,
         }
     }
     best
 }
 
-fn main() {
-    let poem = String::from("roses are red\nviolets are blue\nlifetimes are fine");
-    println!("{}", longest_line(&poem));
+const SAMPLE: &str = "
+>Rosalind_2801
+TTAGGCATCGAT
+>Rosalind_0539
+CATCGGTAGGCA
+>Rosalind_6114
+GGTAGGCTTCATCG
+";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let records = parse_fasta(&input);
+
+    let mut seqs: Vec<&str> = Vec::new();
+    for r in &records {
+        seqs.push(&r.seq);
+    }
+    println!("{}", longest_common_substring(&seqs));
+    Ok(())
 }
 ```
 
 ```text
-lifetimes are fine
+TAGGC
 ```
 
-One input reference means the output must borrow from it, so no annotation is needed.
+Try deleting the three `'a`s from `longest_common_substring`: you get E0106, "missing lifetime specifier", because the signature has two input lifetimes and elision rule 2 needs exactly one. Inside the function, `shortest`, `candidate` and `best` are all `&'a str` slices pointing into the records' strings, so the answer is never copied. It only becomes an owned `String` if you ask for one. Checking 100 sequences of 1000 bases this way takes well under a second.
 :::
 
-:::exercise A borrowing tokenizer
-Write a struct `Words<'a> { text: &'a str }` with a method `fn longer_than(&self, n: usize) -> Vec<&'a str>` that returns every whitespace-separated word longer than `n` characters. Using `&'a str` (not just `&str`) in the return type says the words borrow from the original text, not from the `Words` struct itself. Show that the result can outlive the `Words` value.
+:::exercise A zero-copy FASTA view
+The FASTA parsers so far copied every ID and sequence into new `String`s. For a big file you might prefer to leave the text where it is and just point into it. Write:
+
+```rust,ignore
+struct RecordView<'a> {
+    id: &'a str,
+    seq: &'a str,
+}
+```
+
+1. A method `gc_content(&self) -> f64`, as in the Structs lesson.
+2. `fn parse_views<'a>(text: &'a str) -> Vec<RecordView<'a>>` for FASTA where every sequence fits on **one** line: for each header line, the ID is the rest of the line after `>` and the sequence is the next line. `while let Some(line) = lines.next()` lets you pull the sequence line out of the same iterator inside the loop.
+
+Print the ID, GC content and debug form of each view. Then try parsing a `String` inside an inner block and using the views after the block ends, and read the compiler's complaint.
 :::solution
 ```rust
-struct Words<'a> {
-    text: &'a str,
+/// A record that borrows its ID and sequence from the file's text instead of copying them.
+#[derive(Debug)]
+struct RecordView<'a> {
+    id: &'a str,
+    seq: &'a str,
 }
 
-impl<'a> Words<'a> {
-    fn longer_than(&self, n: usize) -> Vec<&'a str> {
-        let mut out = Vec::new();
-        for w in self.text.split_whitespace() {
-            if w.len() > n {
-                out.push(w);
+impl<'a> RecordView<'a> {
+    fn gc_content(&self) -> f64 {
+        let mut gc = 0;
+        for b in self.seq.bytes() {
+            if b == b'G' || b == b'C' {
+                gc += 1;
             }
         }
-        out
+        100.0 * gc as f64 / self.seq.len() as f64
     }
 }
 
+/// Parses FASTA where every sequence is on a single line.
+fn parse_views<'a>(text: &'a str) -> Vec<RecordView<'a>> {
+    let mut views = Vec::new();
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        if let Some(id) = line.strip_prefix('>') {
+            let seq = lines.next().unwrap_or("").trim();
+            views.push(RecordView { id, seq });
+        }
+    }
+    views
+}
+
 fn main() {
-    let text = String::from("borrow checker keeps references valid");
-    let long;
-    {
-        let words = Words { text: &text };
-        long = words.longer_than(6);
-    } // `words` is dropped here, but `long` borrows from `text`
-    println!("{long:?}");
+    let text = String::from(">Rosalind_0001\nGATTACA\n>Rosalind_0002\nGGCCGCTA\n");
+    let views = parse_views(&text);
+    for v in &views {
+        println!("{} {:.2} {:?}", v.id, v.gc_content(), v);
+    }
 }
 ```
 
 ```text
-["checker", "references"]
+Rosalind_0001 28.57 RecordView { id: "Rosalind_0001", seq: "GATTACA" }
+Rosalind_0002 75.00 RecordView { id: "Rosalind_0002", seq: "GGCCGCTA" }
 ```
+
+The views can't outlive the text they point into:
+
+```rust,compile_fail
+#[derive(Debug)]
+struct RecordView<'a> {
+    id: &'a str,
+    seq: &'a str,
+}
+
+fn parse_views<'a>(text: &'a str) -> Vec<RecordView<'a>> {
+    let mut views = Vec::new();
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        if let Some(id) = line.strip_prefix('>') {
+            let seq = lines.next().unwrap_or("").trim();
+            views.push(RecordView { id, seq });
+        }
+    }
+    views
+}
+
+fn main() {
+    let views;
+    {
+        let text = String::from(">Rosalind_0001\nGATTACA\n");
+        views = parse_views(&text);
+    }
+    println!("{views:?}");
+}
+```
+
+```text
+error[E0597]: `text` does not live long enough
+  --> src/main.rs:23:29
+   |
+22 |         let text = String::from(">Rosalind_0001\nGATTACA\n");
+   |             ---- binding `text` declared here
+23 |         views = parse_views(&text);
+   |                             ^^^^^ borrowed value does not live long enough
+24 |     }
+   |     - `text` dropped here while still borrowed
+25 |     println!("{views:?}");
+   |                ----- borrow later used here
+```
+
+Why only single-line sequences? A `&str` must be one unbroken run of bytes. A wrapped sequence is split by newline characters in the file, so there is no single slice that holds it without the newlines, and joining the pieces means allocating a new `String`. That is the trade-off from the tip above in miniature: borrowing is free when the data already has the shape you need, and owning is the simple answer when it doesn't.
 :::
 
 ```quiz

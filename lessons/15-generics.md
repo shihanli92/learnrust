@@ -2,7 +2,7 @@
 title: Generics
 module: Abstraction
 summary: Write functions, structs and enums that work for many types at once, without losing speed or type safety.
-minutes: 30
+minutes: 35
 ---
 
 You have already used generic types without writing any: `Vec<i32>` and `Vec<String>` are the same `Vec` code holding different types, and `Option<T>` works for any `T`. **Generics** are how that works. They let you write code once with a placeholder type, and have the compiler fill in the real types wherever the code is used.
@@ -320,88 +320,199 @@ That's the deal Rust usually offers: abstractions that are free at run time, pai
 Type inference usually works out the type parameters. When it can't, you can say them explicitly with the turbofish, as you did with `parse::<i32>()`: for example `Vec::<u8>::new()` or `largest::<f64>(&values)`.
 :::
 
-:::exercise A generic stack
-Write a struct `Stack<T>` that wraps a `Vec<T>`, with methods `new() -> Self`, `push(&mut self, item: T)`, `pop(&mut self) -> Option<T>`, `peek(&self) -> Option<&T>` and `len(&self) -> usize`. In `main`, use one stack of numbers and one of strings.
+:::rosalind PERM Enumerating Gene Orders
+Genomes get rearranged over evolutionary time: whole blocks of genes are cut out, flipped and moved. Comparing the order of the same genes in two species (say, humans and mice) tells biologists how their genomes have been shuffled since they split. A first step is simply listing every possible order of *n* genes, which is every **permutation** of the numbers 1 to *n*.
+
+Given a positive integer *n* ≤ 7, print the total number of permutations of 1, 2, ..., *n* on the first line, followed by every permutation on its own line, with the numbers separated by spaces. Any order of the permutations is accepted.
+
+Make the core of the solution generic, because nothing about reordering depends on the items being numbers:
+
+```rust,ignore
+fn permutations<T: Clone>(items: &[T]) -> Vec<Vec<T>>
+```
+
+A neat way to build it is **recursion**, a function calling itself on a smaller problem. The permutations of an empty slice are just one empty list. Otherwise, for each position `i`, put `items[i]` first and follow it with every permutation of the remaining items. `items.to_vec()` makes an owned copy you can `remove(i)` from, which is why `T` must be `Clone`.
+
+For printing, write a second small generic function `fn join<T: Display>(items: &[T], separator: &str) -> String`, which works for anything printable with `{}`. Read the dataset with the file-or-sample pattern from the Errors lesson. For `n = 3` the output is:
+
+```text
+6
+1 2 3
+1 3 2
+2 1 3
+2 3 1
+3 1 2
+3 2 1
+```
 :::solution
 ```rust
-struct Stack<T> {
-    items: Vec<T>,
+use std::error::Error;
+use std::fmt::Display;
+
+const SAMPLE: &str = "3\n";
+
+/// Every ordering of `items`. Works for any element type that can be cloned.
+fn permutations<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
+    if items.is_empty() {
+        return vec![Vec::new()]; // exactly one way to order nothing
+    }
+    let mut result = Vec::new();
+    for i in 0..items.len() {
+        // Pick items[i] to go first, then order the remaining items every possible way.
+        let mut rest = items.to_vec();
+        let first = rest.remove(i);
+        for mut perm in permutations(&rest) {
+            perm.insert(0, first.clone());
+            result.push(perm);
+        }
+    }
+    result
 }
 
-impl<T> Stack<T> {
-    fn new() -> Self {
-        Stack { items: Vec::new() }
+/// Joins any printable items with a separator: [1, 2, 3] -> "1 2 3".
+fn join<T: Display>(items: &[T], separator: &str) -> String {
+    let mut text = String::new();
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            text.push_str(separator);
+        }
+        text.push_str(&item.to_string());
     }
-
-    fn push(&mut self, item: T) {
-        self.items.push(item);
-    }
-
-    fn pop(&mut self) -> Option<T> {
-        self.items.pop()
-    }
-
-    fn peek(&self) -> Option<&T> {
-        self.items.last()
-    }
-
-    fn len(&self) -> usize {
-        self.items.len()
-    }
+    text
 }
 
-fn main() {
-    let mut numbers = Stack::new();
-    numbers.push(1);
-    numbers.push(2);
-    println!("top: {:?}, len: {}", numbers.peek(), numbers.len());
-    println!("popped: {:?}", numbers.pop());
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let n: u32 = input.trim().parse()?;
 
-    let mut words: Stack<String> = Stack::new();
-    words.push(String::from("hello"));
-    println!("popped: {:?}, then {:?}", words.pop(), words.pop());
+    let mut numbers = Vec::new();
+    for k in 1..=n {
+        numbers.push(k);
+    }
+
+    let perms = permutations(&numbers);
+    println!("{}", perms.len());
+    for p in &perms {
+        println!("{}", join(p, " "));
+    }
+    Ok(())
 }
 ```
 
 ```text
-top: Some(2), len: 2
-popped: Some(2)
-popped: Some("hello"), then None
+6
+1 2 3
+1 3 2
+2 1 3
+2 3 1
+3 1 2
+3 2 1
 ```
+
+Nothing in `permutations` mentions numbers: `permutations(&['A', 'C', 'G'])` or `permutations(&["gene1", "gene2"])` would work just as well, and the compiler generates a specialised copy for each element type you use. The bound `T: Clone` is exactly what the body needs (to copy `first` into each result), and nothing more. With *n* = 7 there are 5040 permutations, so the recursion does plenty of copying, but it still finishes in a blink.
 :::
 
-:::exercise Min and max together
-Write a generic function `fn min_max<T: PartialOrd + Copy>(list: &[T]) -> Option<(T, T)>` that returns `None` for an empty slice and otherwise the smallest and largest values. (`Copy` lets you copy values out of the slice.) Test it on integers, floats and an empty slice.
+:::rosalind LEXF Enumerating k-mers Lexicographically
+A **k-mer** is a short string of length *k* taken from some alphabet. Listing every possible k-mer is a common building block: for example, counting how often each 3-letter DNA word appears in a genome starts from the list of all 64 of them.
+
+The dataset has two lines. The first is an ordered alphabet of at most 10 symbols, separated by spaces. The second is a positive integer *n* ≤ 10. Print every string of length *n* that can be formed from the alphabet, one per line, in **lexicographic order**: sorted like a dictionary, but using the order of the alphabet as given, not the usual A to Z. So if the alphabet is `T A G`, then `T` comes before `A`.
+
+Write it as a generic function over the symbol type:
+
+```rust,ignore
+fn kmers<T: Clone>(alphabet: &[T], n: usize) -> Vec<Vec<T>>
+```
+
+Build the strings up one symbol at a time. Start with a list holding one empty sequence. Then, *n* times, replace the list with a longer one: for each existing sequence, in order, and each symbol, in alphabet order, add the sequence with that symbol appended. Because the outer loop keeps the old order and the inner loop follows the alphabet, the result comes out in lexicographic order with no sorting needed.
+
+Use `join` from the PERM exercise with an empty separator to print each k-mer. For this sample:
+
+```text
+T A G
+2
+```
+
+the output is:
+
+```text
+TT
+TA
+TG
+AT
+AA
+AG
+GT
+GA
+GG
+```
 :::solution
 ```rust
-fn min_max<T: PartialOrd + Copy>(list: &[T]) -> Option<(T, T)> {
-    let first = *list.first()?;
-    let mut min = first;
-    let mut max = first;
-    for &item in list {
-        if item < min {
-            min = item;
+use std::error::Error;
+use std::fmt::Display;
+
+const SAMPLE: &str = "T A G\n2\n";
+
+/// All sequences of length `n` over `alphabet`, in the alphabet's order.
+fn kmers<T: Clone>(alphabet: &[T], n: usize) -> Vec<Vec<T>> {
+    let mut result: Vec<Vec<T>> = vec![Vec::new()]; // one sequence of length 0
+    for _ in 0..n {
+        let mut longer = Vec::new();
+        for prefix in &result {
+            for symbol in alphabet {
+                let mut next = prefix.clone();
+                next.push(symbol.clone());
+                longer.push(next);
+            }
         }
-        if item > max {
-            max = item;
-        }
+        result = longer;
     }
-    Some((min, max))
+    result
 }
 
-fn main() {
-    println!("{:?}", min_max(&[3, 9, -2, 7]));
-    println!("{:?}", min_max(&[0.5, 0.25, 2.0]));
-    let empty: [i32; 0] = [];
-    println!("{:?}", min_max(&empty));
+fn join<T: Display>(items: &[T], separator: &str) -> String {
+    let mut text = String::new();
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            text.push_str(separator);
+        }
+        text.push_str(&item.to_string());
+    }
+    text
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let mut lines = input.lines();
+    let alphabet_line = lines.next().ok_or("missing alphabet line")?;
+    let alphabet: Vec<&str> = alphabet_line.split_whitespace().collect();
+    let n: usize = lines.next().ok_or("missing length line")?.trim().parse()?;
+
+    for kmer in kmers(&alphabet, n) {
+        println!("{}", join(&kmer, ""));
+    }
+    Ok(())
 }
 ```
 
 ```text
-Some((-2, 9))
-Some((0.25, 2.0))
-None
+TT
+TA
+TG
+AT
+AA
+AG
+GT
+GA
+GG
 ```
+
+Here `T` is `&str`, because the symbols are slices of the input text, so each k-mer is a `Vec<&str>` such as `["T", "A"]` and `join` glues it into `"TA"`. `kmers(&['A', 'C', 'G', 'T'], 3)` would give all 64 DNA codons as `Vec<char>`s with no change to the function. `lines.next()` returns an `Option`, and `ok_or` turns a missing line into an error message that `?` can pass up from `main`.
 :::
 
 ```quiz

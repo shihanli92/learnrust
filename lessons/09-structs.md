@@ -2,10 +2,10 @@
 title: Structs and Methods
 module: Modelling data
 summary: Group related values into your own types with structs, and give them behaviour with methods and associated functions.
-minutes: 30
+minutes: 40
 ---
 
-So far every value you have worked with has been a number, a boolean, a string or a tuple. Real programs deal with *things*: users, orders, points on a map. A **struct** lets you bundle several related values under one name and give each value a label, so the compiler (and the next person reading your code) knows what they mean.
+So far every value you have worked with has been a number, a boolean, a string or a tuple. Real programs deal with *things*: users, orders, points on a map, DNA sequences. A **struct** lets you bundle several related values under one name and give each value a label, so the compiler (and the next person reading your code) knows what they mean.
 
 Structs are also where Rust code starts to look organised. Once you have a type, you can attach functions to it, called **methods**, and call them with the familiar `value.method()` syntax.
 
@@ -343,79 +343,221 @@ Writing `Self` instead of repeating `Rectangle` means you only have one place to
 Because `new` is an ordinary function, it can check its inputs, round values or fill in defaults. That lets a type guarantee its fields are always sensible, something a bare struct literal can't do.
 :::
 
-:::exercise A temperature type
-Define a struct `Temperature` with one field `celsius: f64`, deriving `Debug`. Give it:
+## A struct for DNA: the FASTA format
 
-1. An associated function `new(celsius: f64) -> Self`.
-2. A method `fahrenheit(&self) -> f64` (the formula is `c * 9.0 / 5.0 + 32.0`).
-3. A method `warm_by(&mut self, degrees: f64)` that increases the temperature.
+From this lesson on, many Rosalind problems hand you DNA in **FASTA** format, the plain-text format biologists have used for decades. A FASTA file is a list of **records**. Each record starts with a header line beginning with `>`, followed by an ID. The lines after it, up to the next `>`, are the sequence:
 
-In `main`, create a temperature of 20 °C, print it in Fahrenheit, warm it by 5 degrees, then print the struct with `{:?}`.
-:::solution
+```text
+>Rosalind_0417
+AGCTTAGCTAGGCTA
+GCGCTAAT
+>Rosalind_9004
+ATATTTAGCATAAT
+```
+
+The catch is that a long sequence is **wrapped over several lines**. The first record above is one sequence of 23 bases, `AGCTTAGCTAGGCTAGCGCTAAT`, not two sequences. Any code that reads FASTA has to glue those lines back together.
+
+A struct is the natural shape for one record:
+
 ```rust
 #[derive(Debug)]
-struct Temperature {
-    celsius: f64,
-}
-
-impl Temperature {
-    fn new(celsius: f64) -> Self {
-        Self { celsius }
-    }
-
-    fn fahrenheit(&self) -> f64 {
-        self.celsius * 9.0 / 5.0 + 32.0
-    }
-
-    fn warm_by(&mut self, degrees: f64) {
-        self.celsius += degrees;
-    }
+struct Record {
+    id: String,  // "Rosalind_0417", without the '>'
+    seq: String, // all the sequence lines joined together
 }
 
 fn main() {
-    let mut t = Temperature::new(20.0);
-    println!("{} °F", t.fahrenheit());
-    t.warm_by(5.0);
-    println!("{t:?}");
+    let rec = Record {
+        id: String::from("Rosalind_0417"),
+        seq: String::from("AGCTTAGCTAGGCTA") + "GCGCTAAT",
+    };
+    println!("{} is {} bases long", rec.id, rec.seq.len());
 }
 ```
 
 ```text
-68 °F
-Temperature { celsius: 25.0 }
+Rosalind_0417 is 23 bases long
 ```
+
+Both fields are owned `String`s, for the reason given earlier: the record should stay valid on its own, however long you keep it, independently of the text it was read from. DNA only uses the ASCII letters A, C, G and T, so `seq.len()` in bytes is also the number of bases.
+
+A file holds many records, so a parser needs somewhere to collect them. That is a `Vec<Record>`, Rust's growable list. The Collections lesson covers `Vec` properly; for now you only need `Vec::new()` to make an empty one, `.push(value)` to add to the end, `.len()`, and indexing with `v[i]` like an array.
+
+:::rosalind GC Computing GC Content
+The **GC content** of a DNA string is the percentage of its bases that are `G` or `C`. It matters to biologists because G–C pairs are held together more strongly than A–T pairs, so GC-rich DNA is more stable, and different species have typical GC contents.
+
+Given a FASTA dataset of up to 10 records, print the ID of the record with the highest GC content on one line, and its GC content as a percentage on the next. Rosalind accepts an error of up to 0.001, so print six decimal places with `{:.6}`.
+
+Build it from these pieces:
+
+1. The `Record` struct above, with a method `gc_content(&self) -> f64` that counts the `G`s and `C`s and returns `100.0 * gc as f64 / self.seq.len() as f64`.
+2. A function `parse_fasta(text: &str) -> Vec<Record>`. Loop over `text.lines()` and `trim()` each line. Skip empty lines. If a line `starts_with('>')`, push a new record whose ID is `line[1..]` (everything after the `>`) and whose sequence is empty. Otherwise the line is part of the sequence of the newest record, `records[records.len() - 1]`, so `push_str` it onto that record's `seq`.
+3. In `main`, keep the index of the best record so far while looping over the others.
+
+Rosalind gives you the dataset as a text file. Until the Errors lesson teaches you to read files, paste its contents into a string constant spanning several lines, and call `.trim()` on it so the extra newlines at the start and end don't matter:
+
+```rust,ignore
+const DATASET: &str = "
+>Rosalind_0417
+AGCTTAGCTAGGCTA
+...
+";
+```
+
+For this sample:
+
+```text
+>Rosalind_0417
+AGCTTAGCTAGGCTA
+GCGCTAAT
+>Rosalind_2231
+GGCCATGCGCGATCC
+GACG
+>Rosalind_9004
+ATATTTAGCATAAT
+```
+
+the output should be:
+
+```text
+Rosalind_2231
+73.684211
+```
+:::solution
+```rust
+struct Record {
+    id: String,
+    seq: String,
+}
+
+impl Record {
+    fn gc_content(&self) -> f64 {
+        let mut gc = 0;
+        for c in self.seq.chars() {
+            if c == 'G' || c == 'C' {
+                gc += 1;
+            }
+        }
+        100.0 * gc as f64 / self.seq.len() as f64
+    }
+}
+
+fn parse_fasta(text: &str) -> Vec<Record> {
+    let mut records: Vec<Record> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('>') {
+            // A header starts a new record. `&line[1..]` skips the '>'.
+            records.push(Record { id: line[1..].to_string(), seq: String::new() });
+        } else {
+            // A sequence line belongs to the most recent record.
+            let last = records.len() - 1;
+            records[last].seq.push_str(line);
+        }
+    }
+    records
+}
+
+const DATASET: &str = "
+>Rosalind_0417
+AGCTTAGCTAGGCTA
+GCGCTAAT
+>Rosalind_2231
+GGCCATGCGCGATCC
+GACG
+>Rosalind_9004
+ATATTTAGCATAAT
+";
+
+fn main() {
+    let records = parse_fasta(DATASET.trim());
+
+    let mut best = 0;
+    for i in 1..records.len() {
+        if records[i].gc_content() > records[best].gc_content() {
+            best = i;
+        }
+    }
+
+    println!("{}", records[best].id);
+    println!("{:.6}", records[best].gc_content());
+}
+```
+
+```text
+Rosalind_2231
+73.684211
+```
+
+`line[1..]` is safe to slice because `>` is a one-byte ASCII character. The line `records.len() - 1` would panic if the file started with a sequence line before any header, which a valid FASTA file never does. You will make the parser report that kind of problem properly in the Custom Errors lesson.
 :::
 
-:::exercise Consuming a builder
-Write a struct `Pizza` with fields `size: u32` and `toppings: Vec<String>`. Add `new(size: u32) -> Self` (no toppings), and a method `with(self, topping: &str) -> Self` that takes the pizza by value, adds the topping and returns it. This lets you chain calls: `Pizza::new(30).with("cheese").with("olives")`. Print the result with `{:#?}`.
+:::exercise Growing a record
+Give `Record` (with `#[derive(Debug)]`) a proper set of methods, the way a real FASTA library would:
 
-`Vec` is Rust's growable list, covered properly in the Collections lesson. For now you only need `Vec::new()` to make an empty one and `.push(value)` to add to it.
+1. An associated function `new(id: &str) -> Self` that makes a record with an empty sequence.
+2. A method `add_line(&mut self, line: &str)` that appends one trimmed line of sequence.
+3. A consuming method `with_line(self, line: &str) -> Self` that adds a line and returns the record, so calls can be chained: `Record::new("x").with_line("ACGT").with_line("GG")`.
+4. Methods `len(&self) -> usize` (number of bases) and `is_empty(&self) -> bool`.
+
+In `main`, create an empty record and print its length, add a line with `add_line`, print again, then build a second record by chaining `with_line` and print it with `{:#?}`.
 :::solution
 ```rust
 #[derive(Debug)]
-struct Pizza {
-    size: u32,
-    toppings: Vec<String>,
+struct Record {
+    id: String,
+    seq: String,
 }
 
-impl Pizza {
-    fn new(size: u32) -> Self {
-        Self { size, toppings: Vec::new() }
+impl Record {
+    fn new(id: &str) -> Self {
+        Self { id: id.to_string(), seq: String::new() }
     }
 
-    fn with(mut self, topping: &str) -> Self {
-        self.toppings.push(topping.to_string());
+    fn add_line(&mut self, line: &str) {
+        self.seq.push_str(line.trim());
+    }
+
+    fn with_line(mut self, line: &str) -> Self {
+        self.add_line(line);
         self
+    }
+
+    fn len(&self) -> usize {
+        self.seq.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.seq.is_empty()
     }
 }
 
 fn main() {
-    let pizza = Pizza::new(30).with("cheese").with("olives");
-    println!("{pizza:#?}");
+    let mut empty = Record::new("Rosalind_0001");
+    println!("{} has {} bases, empty? {}", empty.id, empty.len(), empty.is_empty());
+    empty.add_line("ACGT\n");
+    println!("{} has {} bases, empty? {}", empty.id, empty.len(), empty.is_empty());
+
+    let rec = Record::new("Rosalind_0002").with_line("GATTACA").with_line("  CCGG ");
+    println!("{rec:#?}");
+    println!("length {}", rec.len());
 }
 ```
 
-Taking `mut self` means the method owns the pizza and may change it before handing it back. This "builder" pattern is common in Rust libraries.
+```text
+Rosalind_0001 has 0 bases, empty? true
+Rosalind_0001 has 4 bases, empty? false
+Record {
+    id: "Rosalind_0002",
+    seq: "GATTACACCGG",
+}
+length 11
+```
+
+`with_line` takes `mut self`: it owns the record, may change it, and hands it back. This chaining style is called the **builder** pattern and is common in Rust libraries. `len` and `is_empty` come as a pair by convention; Clippy, Rust's linter, even warns if a type has a public `len` without `is_empty`.
 :::
 
 ```quiz

@@ -2,7 +2,7 @@
 title: Error Handling
 module: Handling failure
 summary: Tell apart bugs from expected failures, and handle the latter with Result, match and the ? operator.
-minutes: 35
+minutes: 45
 ---
 
 Things go wrong. Files are missing, users type "twelve" where you asked for a number, networks drop. Many languages handle this with exceptions, which can fly out of almost any function call without warning. Rust takes a different approach: it splits errors into two kinds and makes both visible.
@@ -254,6 +254,62 @@ None
 
 You can't mix the two in one function: `?` on an `Option` inside a function returning `Result` won't compile. To convert, use `option.ok_or(some_error)?`, which turns `None` into `Err(some_error)`.
 
+## Reading a Rosalind dataset from a file
+
+Until now you have pasted every Rosalind dataset into your program as a string. That works, but it means editing and recompiling for each new dataset, and pasting 1000 lines of FASTA into your source code gets old fast. Now that you know `Result` and `?`, you can read the file Rosalind gives you directly. Two standard library functions do the work:
+
+- `std::env::args()` gives you the program's **command-line arguments** as `String`s. The first one (number 0) is the path of the program itself, so `.nth(1)` is the first argument you typed. It returns an `Option<String>`: `None` if you didn't type one.
+- `std::fs::read_to_string(path)` reads a whole file into a `String`. It returns a `Result<String, std::io::Error>`, because the file might not exist or might not be readable.
+
+From here on, every Rosalind solution in the course starts like this:
+
+```rust
+use std::error::Error;
+
+// Used when no file name is given, so the program still runs on its own.
+const SAMPLE: &str = "GATTACA\n";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let dna = input.trim();
+
+    let mut gc = 0;
+    for c in dna.chars() {
+        if c == 'G' || c == 'C' {
+            gc += 1;
+        }
+    }
+    println!("{} bases, {gc} of them G or C", dna.len());
+    Ok(())
+}
+```
+
+```text
+7 bases, 2 of them G or C
+```
+
+The `match` picks where the text comes from. With a file name, it reads the file, and the `?` hands any I/O error straight back out of `main`. Without one, it falls back to the built-in `SAMPLE`, which is why the program still prints something when you run it on this page. Both arms produce a `String`, so `input` has one type either way. `.trim()` removes the newline at the end of the file, just as it did for pasted text.
+
+The return type `Result<(), Box<dyn Error>>` means "succeed with nothing, or fail with *any* kind of error". That lets `?` pass on an `io::Error` here, a `ParseIntError` there, or even a plain `String` message. The next lesson explains how it works; for now, treat it as the standard signature for a program's `main`.
+
+To run it on a dataset you downloaded, save the file into your project folder and pass its name after `--`. Everything after the `--` goes to your program instead of to Cargo:
+
+```console
+$ cargo run -- rosalind_dna.txt
+946 bases, 471 of them G or C
+$ cargo run -- no_such_file.txt
+Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+```
+
+A missing file is exactly the kind of expected failure `Result` is for: the program reports it and exits with a failure status instead of crashing with a panic.
+
+:::tip Beat the five-minute timer
+Rosalind gives you five minutes to submit an answer once you download a dataset. With this pattern, the routine is: download, `cargo run -- ~/Downloads/rosalind_prtm.txt`, copy the output, upload. Test on the sample first, so you download only when your code works.
+:::
+
 ## Panic or Result?
 
 A useful rule of thumb from the Rust community:
@@ -271,65 +327,161 @@ Returning `Result` hands the decision to the caller, who knows more about the si
 In the Testing lesson you'll see `#[should_panic]`, an attribute that marks a test as passing only if the code inside panics. It's how you check that your `panic!` guards really fire.
 :::
 
-:::exercise Parse a list of numbers
-Write `fn sum_all(items: &[&str]) -> Result<i32, std::num::ParseIntError>` that parses every string and returns the sum, using `?`. In `main`, print the result for `["1", "2", "3"]` and for `["1", "two", "3"]`. Use `match` so the error case prints a friendly message.
+:::rosalind PRTM Calculating Protein Mass
+A protein is a chain of amino acids, and each amino acid has a known weight. Scientists weigh proteins with a mass spectrometer and compare the result with the weight they expect, to check which protein they have. The weight of the chain (its **monoisotopic mass**, in daltons) is simply the sum of the weights of its amino acids, called **residues** once they are part of a chain.
+
+Given a protein string of up to 1000 letters, print its total mass. Rosalind accepts small rounding differences, so print three decimal places with `{:.3}`. These are the residue masses:
+
+| Residue | Mass | Residue | Mass |
+| --- | --- | --- | --- |
+| A | 71.03711 | M | 131.04049 |
+| C | 103.00919 | N | 114.04293 |
+| D | 115.02694 | P | 97.05276 |
+| E | 129.04259 | Q | 128.05858 |
+| F | 147.06841 | R | 156.10111 |
+| G | 57.02146 | S | 87.03203 |
+| H | 137.05891 | T | 101.04768 |
+| I | 113.08406 | V | 99.06841 |
+| K | 128.09496 | W | 186.07931 |
+| L | 113.08406 | Y | 163.06333 |
+
+Write it in three layers:
+
+1. `fn residue_mass(aa: char) -> Option<f64>`: a `match` over the table, `None` for any other character.
+2. `fn protein_mass(protein: &str) -> Result<f64, String>`: add up the masses. Turn each `Option` into a `Result` with `ok_or`, with a message saying which character was wrong and where, then use `?`.
+3. `main`, reading the dataset with the file-or-sample pattern from this lesson.
+
+For the sample `WHEATGRASS` the output is:
+
+```text
+1082.489
+```
 :::solution
 ```rust
-use std::num::ParseIntError;
+use std::error::Error;
 
-fn sum_all(items: &[&str]) -> Result<i32, ParseIntError> {
-    let mut total = 0;
-    for item in items {
-        total += item.parse::<i32>()?;
+const SAMPLE: &str = "WHEATGRASS\n";
+
+fn residue_mass(aa: char) -> Option<f64> {
+    let mass = match aa {
+        'A' => 71.03711,
+        'C' => 103.00919,
+        'D' => 115.02694,
+        'E' => 129.04259,
+        'F' => 147.06841,
+        'G' => 57.02146,
+        'H' => 137.05891,
+        'I' => 113.08406,
+        'K' => 128.09496,
+        'L' => 113.08406,
+        'M' => 131.04049,
+        'N' => 114.04293,
+        'P' => 97.05276,
+        'Q' => 128.05858,
+        'R' => 156.10111,
+        'S' => 87.03203,
+        'T' => 101.04768,
+        'V' => 99.06841,
+        'W' => 186.07931,
+        'Y' => 163.06333,
+        _ => return None,
+    };
+    Some(mass)
+}
+
+fn protein_mass(protein: &str) -> Result<f64, String> {
+    let mut total = 0.0;
+    for (i, aa) in protein.chars().enumerate() {
+        total += residue_mass(aa).ok_or(format!("unknown residue {aa:?} at position {}", i + 1))?;
     }
     Ok(total)
 }
 
-fn main() {
-    for list in [["1", "2", "3"], ["1", "two", "3"]] {
-        match sum_all(&list) {
-            Ok(sum) => println!("{list:?}: sum is {sum}"),
-            Err(e) => println!("{list:?}: could not add them up ({e})"),
-        }
-    }
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let mass = protein_mass(input.trim())?;
+    println!("{mass:.3}");
+    Ok(())
 }
 ```
 
 ```text
-["1", "2", "3"]: sum is 6
-["1", "two", "3"]: could not add them up (invalid digit found in string)
+1082.489
 ```
+
+`residue_mass` uses `return None` inside the `match` for unknown characters, so every other arm can just be a number. If the dataset contained a stray `Z` at position 8, the program would stop with `Error: "unknown residue 'Z' at position 8"`. The quotes are there because `main` prints errors with Debug formatting; the next lesson shows how to control that. Either way, a bad input produces a clear message instead of a wrong answer, which is exactly what you want five minutes before a Rosalind deadline.
 :::
 
-:::exercise Key-value lines
-Write `fn parse_setting(line: &str) -> Result<(String, u32), String>` for lines like `"volume=7"`. Return an `Err` with a helpful message if there is no `=` (use `split_once('=')` and `ok_or`) or if the value is not a number (use `map_err` to turn the parse error into a `String`, as in the hint). Print the result for `"volume=7"`, `"volume"` and `"volume=loud"`.
+:::rosalind MRNA Inferring mRNA from Protein
+The codon table from the Pattern Matching lesson works in one direction only: each codon gives exactly one amino acid, but most amino acids have several codons. Leucine (`L`) has six, tryptophan (`W`) only one. So if you know a protein, how many different RNA strings could have produced it? Multiply the number of choices for each amino acid, and then by 3, because the RNA must end with one of the three stop codons.
 
-Hint: `result.map_err(|e| format!("bad number: {e}"))` changes the error inside a `Result` and leaves an `Ok` alone.
+The answer grows astronomically (a 1000-letter protein has hundreds of digits), so Rosalind asks for it **modulo 1,000,000**, the remainder after dividing by one million. Given a protein string of up to 1000 letters, print that remainder as a single integer.
+
+The number of codons for each amino acid:
+
+| Codons | Amino acids |
+| --- | --- |
+| 1 | M, W |
+| 2 | C, D, E, F, H, K, N, Q, Y |
+| 3 | I |
+| 4 | A, G, P, T, V |
+| 6 | L, R, S |
+
+Write `fn codon_count(aa: char) -> Option<u64>` and `fn count_mrnas(protein: &str) -> Option<u64>`, using `?` on each `codon_count` so that an unknown letter makes the whole count `None`. In `main`, turn that `None` into an error with `ok_or("...")?`.
+
+The trick for the size problem: take the remainder after **every** multiplication, not once at the end. Reducing after each step gives the same final remainder as multiplying everything first and reducing once, but the running total always stays below 1,000,000, so `total * 6` can never overflow a `u64`. Multiplying first would overflow long before the end of the protein, and in a debug build that's a panic.
+
+For the sample `MWQRY` there are 1 × 1 × 2 × 6 × 2 × 3 = 72 possibilities:
+
+```text
+72
+```
 :::solution
 ```rust
-fn parse_setting(line: &str) -> Result<(String, u32), String> {
-    let (key, value) = line
-        .split_once('=')
-        .ok_or(format!("missing '=' in {line:?}"))?;
-    let number = value
-        .trim()
-        .parse::<u32>()
-        .map_err(|e| format!("bad number {value:?}: {e}"))?;
-    Ok((key.trim().to_string(), number))
+use std::error::Error;
+
+const SAMPLE: &str = "MWQRY\n";
+const MODULUS: u64 = 1_000_000;
+
+/// How many codons encode each amino acid (from the codon table in the Pattern Matching lesson).
+fn codon_count(aa: char) -> Option<u64> {
+    match aa {
+        'M' | 'W' => Some(1),
+        'C' | 'D' | 'E' | 'F' | 'H' | 'K' | 'N' | 'Q' | 'Y' => Some(2),
+        'I' => Some(3),
+        'A' | 'G' | 'P' | 'T' | 'V' => Some(4),
+        'L' | 'R' | 'S' => Some(6),
+        _ => None,
+    }
 }
 
-fn main() {
-    for line in ["volume=7", "volume", "volume=loud"] {
-        println!("{:?}", parse_setting(line));
+fn count_mrnas(protein: &str) -> Option<u64> {
+    let mut total = 3; // the three possible stop codons at the end
+    for aa in protein.chars() {
+        total = total * codon_count(aa)? % MODULUS;
     }
+    Some(total)
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let count = count_mrnas(input.trim()).ok_or("the protein contains an unknown amino acid")?;
+    println!("{count}");
+    Ok(())
 }
 ```
 
 ```text
-Ok(("volume", 7))
-Err("missing '=' in \"volume\"")
-Err("bad number \"loud\": invalid digit found in string")
+72
 ```
+
+In `count_mrnas`, `codon_count(aa)?` returns `None` from the whole function the moment it meets a character it doesn't know, which is `?` on `Option` doing its job. `main` returns a `Result`, so it can't use `?` on the `Option` directly; `ok_or` converts it first. Note the order in `total * codon_count(aa)? % MODULUS`: `*` and `%` have the same precedence and run left to right, so the product is reduced right after it is formed.
 :::
 
 ```quiz

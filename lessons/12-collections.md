@@ -281,21 +281,22 @@ contains 2? true
 use std::collections::BTreeMap;
 
 fn main() {
-    let mut population = BTreeMap::new();
-    population.insert("Oslo", 709_000);
-    population.insert("Bergen", 291_000);
-    population.insert("Trondheim", 214_000);
+    // Approximate genome sizes, in base pairs.
+    let mut genome_size = BTreeMap::new();
+    genome_size.insert("yeast", 12_000_000_u64);
+    genome_size.insert("human", 3_100_000_000);
+    genome_size.insert("E. coli", 4_600_000);
 
-    for (city, people) in &population {
-        println!("{city}: {people}");
+    for (organism, bases) in &genome_size {
+        println!("{organism}: {bases}");
     }
 }
 ```
 
 ```text
-Bergen: 291000
-Oslo: 709000
-Trondheim: 214000
+E. coli: 4600000
+human: 3100000000
+yeast: 12000000
 ```
 
 ## Choosing a collection
@@ -310,67 +311,246 @@ Trondheim: 214000
 
 When in doubt, start with a `Vec`. It is the simplest and, for small amounts of data, often the fastest.
 
-:::exercise Average and maximum
-Write `fn stats(values: &[f64]) -> Option<(f64, f64)>` that returns `None` for an empty slice, otherwise `Some((average, maximum))`. Call it with a `Vec` in `main` (a `&Vec<f64>` turns into a `&[f64]` automatically) and with an empty vector.
+:::rosalind CONS Consensus and Profile
+When biologists line up the same gene from several related organisms, they often summarise the alignment in two ways. The **profile** counts, for every column (position), how many of the strings have an A, a C, a G and a T there. The **consensus string** takes the most common base in each column: a best guess at the ancestral sequence the others descend from.
+
+You get a FASTA dataset of up to 10 DNA strings, all the same length (up to 1000 bases, possibly wrapped over several lines). Print the consensus string on the first line, then four lines of the profile in exactly this format, each count separated by a single space:
+
+```text
+A: 0 2 0 ...
+C: 1 1 1 ...
+G: 3 1 0 ...
+T: 0 0 3 ...
+```
+
+If several bases tie for the most common in a column, any of them is accepted.
+
+A good shape for the profile is a `Vec<[u32; 4]>`: one entry per column, each holding the four counts in the order A, C, G, T. `vec![[0; 4]; len]` makes `len` columns of zeros in one go. Parse the input with your FASTA parser from the Structs lesson; now that you know `if let`, the "append to the newest record" step can be `if let Some(last) = records.last_mut() { ... }`, which does nothing instead of panicking if a sequence line comes before any header.
+
+For this sample:
+
+```text
+>Rosalind_0118
+GCTTCAGT
+TC
+>Rosalind_5521
+GACTCAGT
+AC
+>Rosalind_7340
+CATTGAGA
+TG
+>Rosalind_2206
+GGTTCACA
+TC
+```
+
+the output is:
+
+```text
+GATTCAGATC
+A: 0 2 0 0 0 4 0 2 1 0
+C: 1 1 1 0 3 0 1 0 0 3
+G: 3 1 0 0 1 0 3 0 0 1
+T: 0 0 3 4 0 0 0 2 3 0
+```
 :::solution
 ```rust
-fn stats(values: &[f64]) -> Option<(f64, f64)> {
-    if values.is_empty() {
-        return None;
-    }
-    let mut sum = 0.0;
-    let mut max = values[0];
-    for &v in values {
-        sum += v;
-        if v > max {
-            max = v;
-        }
-    }
-    Some((sum / values.len() as f64, max))
+struct Record {
+    id: String,
+    seq: String,
 }
 
+fn parse_fasta(text: &str) -> Vec<Record> {
+    let mut records: Vec<Record> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('>') {
+            records.push(Record { id: line[1..].to_string(), seq: String::new() });
+        } else if let Some(last) = records.last_mut() {
+            last.seq.push_str(line);
+        }
+    }
+    records
+}
+
+const DATASET: &str = "
+>Rosalind_0118
+GCTTCAGT
+TC
+>Rosalind_5521
+GACTCAGT
+AC
+>Rosalind_7340
+CATTGAGA
+TG
+>Rosalind_2206
+GGTTCACA
+TC
+";
+
 fn main() {
-    let temps = vec![18.5, 21.0, 19.5, 25.0];
-    println!("{:?}", stats(&temps));
-    let empty: Vec<f64> = Vec::new();
-    println!("{:?}", stats(&empty));
+    let records = parse_fasta(DATASET.trim());
+    let len = records[0].seq.len();
+
+    // profile[column] = [count of A, count of C, count of G, count of T]
+    let mut profile: Vec<[u32; 4]> = vec![[0; 4]; len];
+    for rec in &records {
+        for (col, base) in rec.seq.bytes().enumerate() {
+            let row = match base {
+                b'A' => 0,
+                b'C' => 1,
+                b'G' => 2,
+                b'T' => 3,
+                _ => continue, // ignore anything that isn't a base
+            };
+            profile[col][row] += 1;
+        }
+    }
+
+    let letters = ['A', 'C', 'G', 'T'];
+
+    let mut consensus = String::new();
+    for counts in &profile {
+        let mut best = 0;
+        for row in 1..4 {
+            if counts[row] > counts[best] {
+                best = row;
+            }
+        }
+        consensus.push(letters[best]);
+    }
+    println!("{consensus}");
+
+    for row in 0..4 {
+        let mut line = format!("{}:", letters[row]);
+        for counts in &profile {
+            line.push_str(&format!(" {}", counts[row]));
+        }
+        println!("{line}");
+    }
 }
 ```
 
 ```text
-Some((21.0, 25.0))
-None
+GATTCAGATC
+A: 0 2 0 0 0 4 0 2 1 0
+C: 1 1 1 0 3 0 1 0 0 3
+G: 3 1 0 0 1 0 3 0 0 1
+T: 0 0 3 4 0 0 0 2 3 0
 ```
+
+In column 8 (the eighth letter), A and T both appear twice. The loop only replaces `best` when a count is strictly bigger, so the tie goes to the letter that comes first, A. `continue` inside the `match` skips to the next base, which is a neat way to ignore unexpected characters.
 :::
 
-:::exercise Letter frequencies
-Count how often each letter appears in `"hello world"`, ignoring spaces, using a `BTreeMap<char, u32>` and the entry API. Print each letter and its count; because it's a `BTreeMap`, they come out in alphabetical order.
+:::rosalind GRPH Overlap Graphs
+Sequencing machines can't read a whole genome in one go. They read millions of short overlapping pieces, and assembly software has to work out which piece follows which. One simple clue: if the end of piece *s* is the same as the start of piece *t*, then *t* may come right after *s*. Drawing an arrow from *s* to *t* for every such pair gives an **overlap graph**.
+
+Given a FASTA dataset of DNA strings, print one line `id_s id_t` for every pair of *different* records where the last 3 bases of *s* equal the first 3 bases of *t*. A record never points to itself, even if its own start and end match. Rosalind accepts the lines in any order, but make yours deterministic: loop over the records in input order.
+
+Comparing every record with every other one works fine for Rosalind's dataset sizes. A tidier approach uses a `HashMap<&str, Vec<usize>>` that maps each 3-base prefix to the positions of the records starting with it. Then each record needs only one lookup, with its own suffix. The map borrows the prefixes straight out of the records, so nothing is copied. Just don't loop over the map itself to print, since its order is unspecified; loop over the records and use `get`.
+
+For this sample:
+
+```text
+>Rosalind_0808
+AAGTCCGA
+>Rosalind_1414
+CGATTTAC
+>Rosalind_2323
+TACCGAAG
+>Rosalind_3131
+CGAGGTAA
+>Rosalind_4747
+AAGCGA
+>Rosalind_5050
+TAATTAA
+```
+
+the output is:
+
+```text
+Rosalind_0808 Rosalind_1414
+Rosalind_0808 Rosalind_3131
+Rosalind_1414 Rosalind_2323
+Rosalind_2323 Rosalind_0808
+Rosalind_2323 Rosalind_4747
+Rosalind_3131 Rosalind_5050
+Rosalind_4747 Rosalind_1414
+Rosalind_4747 Rosalind_3131
+```
 :::solution
 ```rust
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-fn main() {
-    let mut freq: BTreeMap<char, u32> = BTreeMap::new();
-    for c in "hello world".chars() {
-        if c != ' ' {
-            *freq.entry(c).or_insert(0) += 1;
+struct Record {
+    id: String,
+    seq: String,
+}
+
+fn parse_fasta(text: &str) -> Vec<Record> {
+    let mut records: Vec<Record> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('>') {
+            records.push(Record { id: line[1..].to_string(), seq: String::new() });
+        } else if let Some(last) = records.last_mut() {
+            last.seq.push_str(line);
         }
     }
-    for (c, n) in &freq {
-        println!("{c}: {n}");
+    records
+}
+
+const DATASET: &str = "
+>Rosalind_0808
+AAGTCCGA
+>Rosalind_1414
+CGATTTAC
+>Rosalind_2323
+TACCGAAG
+>Rosalind_3131
+CGAGGTAA
+>Rosalind_4747
+AAGCGA
+>Rosalind_5050
+TAATTAA
+";
+
+const K: usize = 3;
+
+fn main() {
+    let records = parse_fasta(DATASET.trim());
+
+    // Index every record by its first K bases: prefix -> positions in `records`.
+    let mut by_prefix: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, rec) in records.iter().enumerate() {
+        by_prefix.entry(&rec.seq[..K]).or_insert(Vec::new()).push(i);
+    }
+
+    for (i, s) in records.iter().enumerate() {
+        let suffix = &s.seq[s.seq.len() - K..];
+        if let Some(matches) = by_prefix.get(suffix) {
+            for &j in matches {
+                if j != i {
+                    println!("{} {}", s.id, records[j].id);
+                }
+            }
+        }
     }
 }
 ```
 
 ```text
-d: 1
-e: 1
-h: 1
-l: 3
-o: 2
-r: 1
-w: 1
+Rosalind_0808 Rosalind_1414
+Rosalind_0808 Rosalind_3131
+Rosalind_1414 Rosalind_2323
+Rosalind_2323 Rosalind_0808
+Rosalind_2323 Rosalind_4747
+Rosalind_3131 Rosalind_5050
+Rosalind_4747 Rosalind_1414
+Rosalind_4747 Rosalind_3131
 ```
+
+`Rosalind_5050` starts and ends with `TAA`, but the `j != i` check keeps it from pointing at itself. The map stores positions (`usize`) rather than records, because the records already live in the `Vec`; the positions are cheap to copy and let you compare "is this the same record?" with a simple `!=`. Each `Vec` in the map keeps records in the order they were pushed, so the output order is fixed. The entry API with `or_insert(Vec::new())` is the same trick as counting words: create an empty list for a new prefix, then push onto it.
 :::
 
 ```quiz
