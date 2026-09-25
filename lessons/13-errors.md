@@ -35,12 +35,12 @@ fn main() {
 ```text
 5
 
-thread 'main' panicked at src/main.rs:3:9:
+thread 'main' (31764) panicked at src/main.rs:3:9:
 average() called with no values
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
-Before exiting, a panic **unwinds** the stack: it walks back up through the function calls and drops every value along the way, so memory and files are cleaned up properly. Setting the environment variable `RUST_BACKTRACE=1` shows the list of calls that led to the panic, which is very useful for finding bugs.
+The first line says which thread panicked (`main`, plus an ID number that varies between runs) and where in your source code. Before exiting, a panic **unwinds** the stack: it walks back up through the function calls and drops every value along the way, so memory and files are cleaned up properly. Setting the environment variable `RUST_BACKTRACE=1` shows the list of calls that led to the panic, which is very useful for finding bugs.
 
 You have already met code that panics for you: indexing past the end of a vector, integer overflow in debug builds, dividing an integer by zero, and `unwrap()` on a `None`. A panic always means "the program has a bug", never "the user did something unusual".
 
@@ -78,6 +78,10 @@ fn main() {
 ```
 
 The `::<i32>` (nicknamed the **turbofish**) tells `parse` which type to produce. Often you can leave it out and annotate the variable instead: `let n: i32 = text.parse().unwrap();`. The error type here is `std::num::ParseIntError`, which knows how to describe itself when printed with `{}`.
+
+:::note Coming from Python
+Python's `int(" 42\n")` quietly ignores surrounding whitespace, but Rust's `parse` doesn't: `" 42\n".parse::<i32>()` is an `Err`. Lines read from a file or pasted from a dataset often carry spaces or a trailing newline, so call `.trim()` before parsing, as the examples below do.
+:::
 
 The crucial point is the same as with `Option`: a `Result<i32, ParseIntError>` is not an `i32`. You cannot use the number until you have dealt with the possibility that there isn't one.
 
@@ -183,6 +187,10 @@ Ok(3)
 ```
 
 The `?` version reads like code that ignores errors, yet handles every one of them. Each `?` is a visible marker of "this step can fail, and if it does we stop here".
+
+:::note Coming from Python
+`?` is much like letting an exception propagate to the caller, with two differences: every place it can happen is marked with a `?`, and the function's signature states which error type can come out. Think of returning `Result` as a checked, typed `raise` that the caller can't overlook.
+:::
 
 There is one rule: `?` can only be used inside a function whose return type can hold the error, typically a `Result`. Using it in a function that returns `()` or `i32` is a compile error:
 
@@ -304,7 +312,7 @@ $ cargo run -- no_such_file.txt
 Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
 ```
 
-A missing file is exactly the kind of expected failure `Result` is for: the program reports it and exits with a failure status instead of crashing with a panic.
+A missing file is exactly the kind of expected failure `Result` is for: the program reports it and exits with a failure status instead of crashing with a panic. The report is in Debug format, because that is how `main` prints the error it returns; the next lesson shows how to print a friendlier message instead.
 
 :::tip Beat the five-minute timer
 Rosalind gives you five minutes to submit an answer once you download a dataset. With this pattern, the routine is: download, `cargo run -- ~/Downloads/rosalind_prtm.txt`, copy the output, upload. Test on the sample first, so you download only when your code works.
@@ -412,7 +420,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 1082.489
 ```
 
-`residue_mass` uses `return None` inside the `match` for unknown characters, so every other arm can just be a number. If the dataset contained a stray `Z` at position 8, the program would stop with `Error: "unknown residue 'Z' at position 8"`. The quotes are there because `main` prints errors with Debug formatting; the next lesson shows how to control that. Either way, a bad input produces a clear message instead of a wrong answer, which is exactly what you want five minutes before a Rosalind deadline.
+`residue_mass` uses `return None` inside the `match` for unknown characters, so every other arm can just be a number. If the dataset contained a stray `Z` at position 8, the program would stop with `Error: "unknown residue 'Z' at position 8"`. The quotes are there because `main` prints errors with Debug formatting; the next lesson shows how to print the plain message instead. Either way, a bad input produces a clear message instead of a wrong answer, which is exactly what you want five minutes before a Rosalind deadline.
 :::
 
 :::rosalind MRNA Inferring mRNA from Protein

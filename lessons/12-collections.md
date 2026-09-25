@@ -63,10 +63,12 @@ fn main() {
 ```text
 there is no element 7
 
-thread 'main' panicked at src/main.rs:11:14:
+thread 'main' (48213) panicked at src/main.rs:11:14:
 index out of bounds: the len is 3 but the index is 7
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
+
+The number after `'main'` is an ID the operating system gave the thread, and it changes from run to run.
 
 Use `v[i]` when an out-of-range index would be a bug in your program; crashing loudly is then the right response. Use `v.get(i)` when the index comes from outside (user input, a file) and "not there" is a normal situation you want to handle.
 
@@ -131,6 +133,77 @@ error[E0502]: cannot borrow `v` as mutable because it is also borrowed as immuta
 ```
 
 Why should adding to the *end* affect a reference to the *start*? Because a vector keeps its elements in one block of memory. When that block is full, `push` allocates a bigger one, copies everything over and frees the old block. `first` would then point at freed memory. The borrow rules make that bug impossible. The fix is to finish using `first` before the `push`, or to copy the value out with `let first = v[0];`.
+
+### Moving out of a vector
+
+Indexing gives you *access* to an element, but the vector still owns it. Try to take a `String` field out of a vector of FASTA records and the compiler stops you:
+
+```rust,compile_fail
+struct Record {
+    id: String,
+    seq: String,
+}
+
+fn main() {
+    let records = vec![Record { id: String::from("seq1"), seq: String::from("GATTACA") }];
+    let dna = records[0].seq;
+    println!("{dna}");
+}
+```
+
+```text
+error[E0507]: cannot move out of index of `Vec<Record>`
+ --> src/main.rs:8:15
+  |
+8 |     let dna = records[0].seq;
+  |               ^^^^^^^^^^^^^^ move occurs because value has type `String`, which does not implement the `Copy` trait
+  |
+help: consider borrowing here
+  |
+8 |     let dna = &records[0].seq;
+  |               +
+```
+
+`let dna = records[0].seq;` would move the string out and leave a hole in the vector's record, and Rust never allows half-empty values. The same error appears as "cannot move out of `rec.id` which is behind a shared reference" when you write `rec.id` inside `for rec in &records` and try to store it somewhere. With a `Copy` type such as `i32` there is no problem, because the value is simply copied. For everything else, pick one of these fixes:
+
+```rust
+struct Record {
+    id: String,
+    seq: String,
+}
+
+fn main() {
+    let mut records = vec![
+        Record { id: String::from("seq1"), seq: String::from("GATTACA") },
+        Record { id: String::from("seq2"), seq: String::from("CCGG") },
+        Record { id: String::from("seq3"), seq: String::from("TTA") },
+    ];
+
+    let dna = &records[0].seq; // 1. borrow it (usually all you need)
+    println!("borrowed {dna}");
+
+    let copy = records[0].seq.clone(); // 2. make your own copy
+    println!("cloned {copy}");
+
+    let last = records.remove(2); // 3. take one record out of the vector
+    println!("removed {}", last.id);
+
+    let mut ids = Vec::new();
+    for rec in records { // 4. loop without & takes ownership of every record
+        ids.push(rec.id);
+    }
+    println!("{ids:?}");
+}
+```
+
+```text
+borrowed GATTACA
+cloned GATTACA
+removed seq3
+["seq1", "seq2"]
+```
+
+`remove(i)` takes the element out and shifts the rest down. The last loop consumes `records`, so the vector can't be used after it. Borrowing is the cheapest fix; reach for the others only when you really need an owned value.
 
 ### Storing different kinds of value
 
@@ -243,6 +316,10 @@ Iterating over a `HashMap` visits entries in an **unspecified order**, which can
 :::
 
 `collect()` gathers the keys into a `Vec`; you'll learn how it works in the Closures and Iterators lesson. You can also loop over a map directly with `for (key, value) in &map`, as long as the order doesn't matter to you.
+
+:::note Coming from Python
+Three dict habits don't carry over. `map[key]` panics on a missing key, like a `KeyError` nobody catches, so use `get` when the key may be absent. You can't write through an index either: `counts[&key] += 1` or `profile[&key][i] += 1` doesn't compile, because `HashMap` only supports indexing for reading; use `get_mut` or `entry`. And unlike a Python 3.7+ dict, a `HashMap` does not keep insertion order, so for output that must be the same every run (as in GRPH below), loop over your own `Vec` or sort first.
+:::
 
 ## HashSet: unique values
 

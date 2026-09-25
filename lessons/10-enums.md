@@ -243,6 +243,8 @@ found 4
 no even number
 ```
 
+Looping over `numbers`, a slice, gives you a reference `&i32` for each element. Writing `for &n` instead of `for n` is a small pattern that unpacks the reference, so `n` is a plain `i32`. The Pattern Matching lesson explains patterns like this.
+
 The important part is that `Option<i32>` and `i32` are **different types**. You cannot add `1` to an `Option<i32>`, because it might be `None`:
 
 ```rust,compile_fail

@@ -121,6 +121,10 @@ impl std::error::Error for ConfigError {}
 
 There is one method worth overriding. `source()` returns the lower-level error that caused this one, if any. For `BadNumber`, that is the `ParseIntError` it wraps. Error-reporting tools follow this chain to print "caused by..." lines. You'll see it in the full example below.
 
+:::note Coming from Python
+`Display` and `Debug` play the roles of `__str__` and `__repr__`: `{}` gives the message for users, `{:?}` the one for programmers. `source()` is Rust's version of `raise ConfigError(...) from e`: it exposes the lower-level error that caused this one, like Python's `__cause__`.
+:::
+
 ## `From`: letting `?` convert errors
 
 Look again at `parse_retries`. The `match` around `parse()` exists only to wrap a `ParseIntError` in `ConfigError::BadNumber`. You'd like to write `value.trim().parse()?` instead, but `?` would try to return a `ParseIntError` from a function that returns `ConfigError`.
@@ -229,6 +233,53 @@ scaled width = 18
 This works because the standard library provides a `From` conversion from *every* error type into `Box<dyn Error>`, so `?` accepts them all. A `&str` or `String` converts too, via `.into()`, which is handy for one-off messages. `Box` puts the value on the heap; the Smart Pointers lesson explains it.
 
 The trade-off: once an error is in a `Box<dyn Error>`, the caller can print it but can no longer easily `match` on which kind of error it was. That's usually fine at the top of a program, and not fine in a library.
+
+## Friendly messages from main
+
+There is one catch with returning `Result` from `main`. As the last lesson showed, Rust prints the returned error with **Debug** formatting. For the FASTA parser you'll write below, a user would see `Error: MissingHeader { line: 1 }` or `Error: Io(Os { code: 2, kind: NotFound, message: "No such file or directory" })`, not the `Display` message you wrote so carefully.
+
+The usual fix is to move the program's work into a function, conventionally called `run`, and let `main` do nothing but report:
+
+```rust
+use std::error::Error;
+
+const SAMPLE: &str = "GATTACA\n";
+
+fn run() -> Result<(), Box<dyn Error>> {
+    let input = match std::env::args().nth(1) {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => SAMPLE.to_string(),
+    };
+    let dna = input.trim();
+    if dna.is_empty() {
+        return Err("the dataset is empty".into());
+    }
+    println!("{} bases", dna.len());
+    Ok(())
+}
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+}
+```
+
+```text
+7 bases
+```
+
+```console
+$ cargo run -- no_such_file.txt
+error: No such file or directory (os error 2)
+$ echo $?
+1
+```
+
+`eprintln!` works like `println!` but writes to **standard error**, the stream meant for error messages, so they don't end up mixed into output you redirect to a file. `std::process::exit(1)` ends the program immediately with status code 1. Any non-zero status tells the shell that something failed, just as returning `Err` from `main` did (`echo $?` shows the last status). By the time `main` calls it, `run` has returned and all its values have been cleaned up.
+
+`run` can just as well return your own error type, such as `Result<(), FastaError>`; either way `{e}` uses `Display`. The SPLC solution at the end of this lesson uses this pattern.
 
 ## Crates that remove the boilerplate
 
@@ -406,6 +457,8 @@ error: could not read the FASTA file
 ```
 
 Each variant carries exactly the details needed to find the problem in a thousand-line file, and a caller could `match` on `InvalidBase` to, say, skip bad records instead of giving up. `enumerate()` numbers the lines from 0, hence `i + 1`. `record.id.clone()` is needed because the error must own its data: it may outlive `records`, which is dropped when the function returns. This parser, error type and all, is very close to the `fasta` module of `dnakit`, the crate you'll build in lesson 25.
+
+Rosalind's files are tidy; FASTA from other sources is not, and this parser would trip over three common things. A file saved by some Windows editors starts with an invisible byte order mark (the character `'\u{feff}'`), so the first line doesn't start with `>` and you get `MissingHeader { line: 1 }`: strip it first with `text.strip_prefix('\u{feff}').unwrap_or(text)`. Headers from databases such as NCBI carry a description after the ID, as in `>NM_000546.6 Homo sapiens tumor protein p53 (TP53), mRNA`; usually you want only the first word as the ID, which `id.split_whitespace().next()` gives you, perhaps keeping the rest in a `description` field. And real sequences often contain lowercase letters (which some tools use to mark repetitive regions) and `N` for an unknown base, both rejected here as `InvalidBase`; accept them by uppercasing each character with `c.to_ascii_uppercase()` and allowing `N`, as long as the code that uses the sequences can handle an `N`.
 :::
 
 :::rosalind SPLC RNA Splicing
@@ -413,7 +466,7 @@ In plants and animals, genes are interrupted by stretches of DNA that don't code
 
 The dataset is a FASTA file. The first record is the gene; every record after it is an intron (each occurs in the gene exactly once). Remove the introns from the gene, transcribe the result to RNA (T becomes U), translate it with the codon table, and print the protein on one line. Stop at the stop codon, as in PROT.
 
-Use your parser from the previous exercise, and read the dataset with `read_fasta` when a file name is given, falling back to `parse_fasta(SAMPLE)` otherwise. Both return a `FastaError`, which `?` in `main` turns into a `Box<dyn Error>`.
+Use your parser from the previous exercise, and read the dataset with `read_fasta` when a file name is given, falling back to `parse_fasta(SAMPLE)` otherwise. Both return a `FastaError`, which `?` turns into a `Box<dyn Error>`. Put the work in a `run` function and print errors from `main` with `Display`, as shown earlier in this lesson, so a bad dataset gives a readable message.
 
 Two useful methods: `records.split_first()` returns `Some((first, rest))` for a non-empty slice, and `text.replace(pattern, "")` deletes every occurrence of `pattern`. For the translation, reuse `amino_acid` from the Pattern Matching lesson, or try the compact version in the solution.
 
@@ -551,7 +604,7 @@ GGTCATTCAG
 CCTTGGAA
 ";
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn run() -> Result<(), Box<dyn Error>> {
     let records = match std::env::args().nth(1) {
         Some(path) => read_fasta(&path)?,
         None => parse_fasta(SAMPLE)?,
@@ -568,6 +621,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", translate(&rna));
     Ok(())
 }
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {e}");
+        if let Some(cause) = e.source() {
+            eprintln!("  caused by: {cause}");
+        }
+        std::process::exit(1);
+    }
+}
 ```
 
 ```text
@@ -576,7 +639,13 @@ MYSTERY
 
 The compact `translate` treats each codon as a three-digit number in base 4, with U, C, A and G as the digits 0 to 3. So `UUU` is 0, `UUC` is 1 and `GGG` is 63, and that number indexes a 64-letter string where `*` marks the stop codons. It is the same table as the big `match`, just shorter to type; the `match` is easier to check by eye.
 
-Notice how little error handling `main` needs. The parser reports bad input precisely, `?` converts every error on the way up, and an empty file becomes a clear message via `.into()` rather than a panic.
+Notice how little error handling `run` needs. The parser reports bad input precisely, `?` converts every error on the way up, and an empty file becomes a clear message via `.into()` rather than a panic. `main` then prints whatever went wrong in plain words, including the cause behind a `FastaError::Io`:
+
+```console
+$ cargo run -- no_such_file.txt
+error: could not read the FASTA file
+  caused by: No such file or directory (os error 2)
+```
 :::
 
 ```quiz

@@ -383,6 +383,10 @@ Both fields are owned `String`s, for the reason given earlier: the record should
 
 A file holds many records, so a parser needs somewhere to collect them. That is a `Vec<Record>`, Rust's growable list. The Collections lesson covers `Vec` properly; for now you only need `Vec::new()` to make an empty one, `.push(value)` to add to the end, `.len()`, and indexing with `v[i]` like an array.
 
+:::note Coming from Python
+In Python you might append a new record to the list and keep adding lines to it through a variable such as `current`, because both refer to the same object. In Rust, `records.push(current)` *moves* the record into the vector, so touching `current` afterwards is error E0382. Don't follow the compiler's hint to derive `Clone` and push `current.clone()`: that compiles, but the vector gets a separate copy, your later edits reach only the original, and the program prints `NaN` because the records in the vector never get a sequence. Instead, edit the record that is already in the vector, as step 2 below does.
+:::
+
 :::rosalind GC Computing GC Content
 The **GC content** of a DNA string is the percentage of its bases that are `G` or `C`. It matters to biologists because G–C pairs are held together more strongly than A–T pairs, so GC-rich DNA is more stable, and different species have typical GC contents.
 
@@ -403,6 +407,14 @@ AGCTTAGCTAGGCTA
 ...
 ";
 ```
+
+For a long dataset, such as 10,000 bases of RNA, pasting gets tedious. An optional shortcut is to save the dataset file next to your source file (in `src/` in a Cargo project) and write:
+
+```rust,ignore
+const DATASET: &str = include_str!("rosalind_gc.txt");
+```
+
+The `include_str!` macro copies the file's text into your program **when it compiles**, exactly as if you had pasted it. The path is relative to the source file containing the macro. There is no error to handle, because a missing file stops the program from compiling at all. The flip side: you must recompile for every new dataset, and it doesn't work in the Playground, which has no files. The Errors lesson shows how to read a file while the program runs.
 
 For this sample:
 

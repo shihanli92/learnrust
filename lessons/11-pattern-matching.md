@@ -220,6 +220,30 @@ a blue line of length 8
 
 Since `describe` receives `&Shape`, Rust matches *through* the reference and the names it binds (`name`, `length`, `r`...) are references too. This convenience is called **match ergonomics**. It means you rarely need to write `&` or `ref` in patterns yourself.
 
+### References
+
+Rarely, but not never. A `&` in a pattern matches a reference and binds what it points to. You will see it most in loops over borrowed numbers and in closure parameters, which are patterns too:
+
+```rust
+fn main() {
+    let lengths = vec![120, 45, 300];
+
+    let mut total = 0;
+    for &len in &lengths {
+        total += len; // `len` is an i32, not a &i32
+    }
+
+    let any_long = lengths.iter().any(|&len| len > 250);
+    println!("total {total}, any longer than 250? {any_long}");
+}
+```
+
+```text
+total 465, any longer than 250? true
+```
+
+Looping over `&lengths` yields `&i32` values; the pattern `&len` strips the reference, so `len` is a copy of the number. It is the same as writing `for len in &lengths` and then using `*len`. Closures work the same way: `lengths.iter().any(...)` asks "is this true for any item?" and hands the closure each item as a `&i32`, so `|&len|` gives you a plain `i32` to compare. (Iterator methods like `any` get their own lesson later.) This only works for `Copy` types such as numbers, `char` and `bool`. For a `String`, `&s` would have to move the string out of something you only borrowed, which the compiler refuses; the next lesson shows that error.
+
 ## Binding with @
 
 Occasionally you want to test a value against a pattern *and* keep the whole value. The `@` operator does both: `name @ pattern`.
