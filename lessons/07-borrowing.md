@@ -203,7 +203,7 @@ The same rule protects programs that run several threads at once. A **data race*
 
 ## A borrow ends at its last use
 
-The rules are about references that are *in use* at the same time. A reference's borrow lasts from where it is created to the last place it is used, not necessarily to the end of the scope. This is called **non-lexical lifetimes**, and it means this program is fine:
+The rules are about references that are *in use* at the same time. A reference's borrow lasts from where it is created to the last place it is used, not necessarily to the end of the scope. In other words, the compiler looks at where you actually use a reference, not at where the braces are. (You may see this called *non-lexical lifetimes* online; that is just the technical name for this rule.) It means this program is fine:
 
 ```rust
 fn main() {
@@ -355,10 +355,13 @@ The old last match was at position 14
 
 **Part 1.** Write `fn reverse_complement(dna: &str) -> String`. The function only needs to *read* the DNA, so it borrows it; it builds and returns a new, owned `String`. (`&str` is the type of borrowed text, such as a string literal; the next lesson explains how it relates to `String`.) Just as `(1..=4).rev()` walks a range backwards, `dna.chars().rev()` gives you the characters from last to first. Push each one's partner onto a `String::new()`.
 
-**Part 2.** Complement a sequence *in place*, without building a second copy, by writing `fn reverse_complement_in_place(seq: &mut Vec<u8>)`. It works on the raw bytes of the text, which you can compare with byte literals like `b'A'` from the types lesson. Useful tools:
+Part 1 is all you need to solve the problem on Rosalind.
 
-- `dna.as_bytes().to_vec()` turns text into a `Vec<u8>` you own, one byte per letter.
-- `seq.reverse()` reverses a `Vec` in place.
+**Part 2 (optional stretch).** This part introduces several new tools at once, so skip it if Part 1 was enough work; you can come back after the next lesson, which covers slices. The goal is to complement a sequence *in place*, changing the letters where they are instead of building a second copy, by writing `fn reverse_complement_in_place(seq: &mut [u8])`. It works on the raw bytes of the text: each letter of a DNA string is one `u8` number, which you can compare with byte literals like `b'A'` from the types lesson. The new pieces:
+
+- `dna.as_bytes().to_vec()` copies the text's bytes into a `Vec<u8>` you own. A `Vec` is a growable list; the collections lesson covers it properly.
+- `&mut [u8]` means "a mutable borrow of some bytes in a row". The `[u8]` is a *slice*, the topic of the next lesson. For now, it is enough to know that calling `reverse_complement_in_place(&mut seq)` with your `Vec<u8>` lends it to the function this way.
+- `seq.reverse()` reverses the bytes in place.
 - `for base in seq.iter_mut()` hands you a `&mut u8` for each element in turn, so `*base = ...` overwrites it.
 - `String::from_utf8(seq).unwrap()` turns the bytes back into a `String` at the end. Like `parse`, it can fail (not every list of bytes is valid text), hence the `unwrap`.
 :::solution
@@ -393,7 +396,7 @@ ACGTTAGCCTGTAATC
 
 Any character that isn't one of the four bases is skipped, so a newline left over from pasting can't sneak into the answer.
 
-Part 2:
+Part 2 (optional):
 
 ```rust
 fn complement(base: u8) -> u8 {
@@ -410,7 +413,7 @@ fn complement(base: u8) -> u8 {
     }
 }
 
-fn reverse_complement_in_place(seq: &mut Vec<u8>) {
+fn reverse_complement_in_place(seq: &mut [u8]) {
     seq.reverse();
     for base in seq.iter_mut() {
         *base = complement(*base); // read the byte, then overwrite it
@@ -452,7 +455,7 @@ The `&mut` in the call `reverse_complement_in_place(&mut seq)` tells every reade
 - Because `s` is a `String`.
 - It doesn't compile.
 + Because `r1` is last used before `r2` is created, so the borrows don't overlap.
-= With non-lexical lifetimes, a borrow ends at its last use, not at the end of the scope.
+= A borrow ends at its last use, not at the end of the scope, so `r1` is finished before `r2` begins.
 
 ? What does the `*` do in `*count += 1` when `count: &mut i32`?
 - Multiplies `count` by 1.

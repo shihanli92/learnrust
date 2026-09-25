@@ -22,7 +22,7 @@ An integer is a whole number. Rust has several integer types, named by whether t
 | 128 | `i128` | `u128` |
 | pointer-sized | `isize` | `usize` |
 
-`isize` and `usize` are as wide as a memory address on the machine: 64 bits on almost every computer today.
+`isize` and `usize` are as wide as a memory address on the machine: 64 bits on almost every computer today. You can skim that detail; what matters for now is the advice below, that lengths and positions use `usize`.
 
 Which one should you pick?
 
@@ -32,7 +32,7 @@ Which one should you pick?
 
 ### Writing integer literals
 
-Rust gives you some conveniences for writing numbers:
+Rust gives you some conveniences for writing numbers. The underscores and the type suffix are the ones you will use; hexadecimal, octal and binary are for low-level work, so you can skim those lines.
 
 ```rust
 fn main() {
@@ -63,11 +63,13 @@ fn main() {
 ```
 
 ```text
-thread 'main' panicked at src/main.rs:3:5:
+thread 'main' (48213) panicked at src/main.rs:3:5:
 attempt to add with overflow
 ```
 
 When you build in debug mode (plain `cargo run`), Rust checks every arithmetic operation and **panics** on overflow. A panic stops the program with an error message. Crashing sounds harsh, but it is much better than carrying on with a silently wrong number.
+
+In the message, `src/main.rs:3:5` is the file, line and column where it happened. The number in parentheses after `'main'` is an ID for the running thread; it changes from run to run, so yours will differ.
 
 In release mode (`cargo build --release`) these checks are switched off for speed, and the value **wraps around**: 250 + 10 becomes 4. Your code should never rely on that. If you actually want wrapping, or want to handle overflow yourself, integers have methods that say so explicitly:
 
@@ -239,7 +241,7 @@ fn main() {
 ```
 
 ```text
-thread 'main' panicked at src/main.rs:4:20:
+thread 'main' (48377) panicked at src/main.rs:4:20:
 index out of bounds: the len is 3 but the index is 3
 ```
 

@@ -5,19 +5,29 @@ summary: Install the Rust toolchain, create your first project with Cargo and le
 minutes: 25
 ---
 
-Rust is a systems programming language that promises three things at once: programs that run as fast as C or C++, memory safety without a garbage collector, and a compiler that catches whole classes of bugs before your code ever runs. The price is a stricter compiler. Most of this course is about learning to work *with* that compiler instead of fighting it.
+Rust is a systems programming language that promises three things at once: programs that run as fast as C or C++, memory safety without a garbage collector (the background clean-up process many languages rely on), and a compiler that catches whole classes of bugs before your code ever runs. The price is a stricter compiler. Most of this course is about learning to work *with* that compiler instead of fighting it.
 
 By the end of the course you will have built and published a small library crate (Rust's word for a package) that other people can depend on: `dnakit`, a toolkit for working with DNA, RNA and protein sequences. Along the way, most exercises are real bioinformatics problems from the Rosalind site, so every new Rust feature gets put to work on actual data.
 
 ## Install the toolchain
 
-Rust is installed with **rustup**, a small tool that manages compiler versions for you. On macOS or Linux, run this in a terminal:
+Rust is installed with **rustup**, a small tool that manages compiler versions for you. You type the commands in this course into a **terminal**, a window where you run programs by typing their names. On macOS or Linux, run this in a terminal (type everything after the `$`, then press Enter):
 
 ```console
 $ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-On Windows, download and run `rustup-init.exe` from [rustup.rs](https://rustup.rs). When it finishes, open a new terminal and check that everything is on your `PATH`:
+On Windows, download and run `rustup-init.exe` from [rustup.rs](https://rustup.rs).
+
+:::tip Step by step, per system
+- **Opening a terminal.** macOS: open the **Terminal** app (search for it with Cmd+Space). Windows: open **Terminal** or **PowerShell** from the Start menu. Linux: open your desktop's **Terminal** app (often Ctrl+Alt+T).
+- **Windows:** `rustup-init` offers to install the **Visual Studio C++ Build Tools**. Accept. Rust needs them to turn your code into a program.
+- **macOS:** if your first build later fails with an error mentioning `linker` or `cc`, run `xcode-select --install`, let it finish, and build again.
+- **During the install**, rustup asks how to proceed. Press Enter to accept the default installation.
+- **Afterwards**, close the terminal and open a new one, so it picks up the newly installed tools.
+:::
+
+When it finishes, open a new terminal and check that everything is on your `PATH` (the list of places the terminal looks for programs):
 
 ```console
 $ rustc --version
@@ -59,7 +69,9 @@ hello/
     └── main.rs    # your code
 ```
 
-Open `src/main.rs`. Cargo has already written a program for you:
+Cargo creates the `hello` folder inside whatever folder your terminal was in when you ran the command (usually your home folder), and `cd hello` moves the terminal into it.
+
+Open `src/main.rs` in a code editor. A good free choice is [Visual Studio Code](https://code.visualstudio.com) with the **rust-analyzer** extension (install it from the Extensions panel): it colours your code, shows errors as you type and explains what things are when you hover over them. Use **File > Open Folder** and pick the `hello` folder. Cargo has already written a program for you:
 
 ```rust
 fn main() {
@@ -113,6 +125,8 @@ Rust is 11 years old.
 Debug formatting shows quotes: "Rust"
 ```
 
+Only a plain variable name works inside the braces. Something like `{language.len()}` or `{2026 - year}` is a compile error; for anything more than a name, write an empty `{}` and put the expression after the comma, as the second line does.
+
 `{:?}` uses **Debug** formatting. It works on far more types than `{}`, which makes it the one to reach for when you want to inspect a value.
 
 ## Reading compiler errors
@@ -135,6 +149,8 @@ error: cannot find macro `printn` in this scope
 
 Read errors from the top. The first line says *what* went wrong, the `-->` line says *where*, and a `help:` line often tells you exactly how to fix it. Many errors also come with a code such as `E0382`. Running `rustc --explain E0382` prints a longer explanation with examples.
 
+The errors shown in this course are trimmed to the important part. The real ones on your screen are often much longer. Don't let that put you off: read the first line that starts with `error`, then look for a `help:` line. `note:` lines that point into files inside Rust itself (paths you didn't write) can usually be ignored at first.
+
 :::note Formatting and linting
 Run `cargo fmt` to format your code the standard way, and `cargo clippy` for extra advice on writing idiomatic Rust. Both come with rustup.
 :::
@@ -156,7 +172,7 @@ Five minutes is plenty if your program already works, so get it right on the sam
 
 ### Biology in one minute
 
-You don't need to be a biologist; each exercise explains the little biology it needs. Here is the core. **DNA** is a long chain of four building blocks called nucleotides, written as the letters `A`, `C`, `G` and `T`, so a piece of DNA is simply a string such as `"GATTACA"`. DNA is double-stranded, and the two strands pair up letter by letter: `A` always sits opposite `T`, and `C` opposite `G`. **RNA** is a working copy of DNA that uses the same alphabet, except that `U` takes the place of `T`. A cell reads RNA three letters at a time; each three-letter **codon** stands for one amino acid, or for "stop". A **protein** is a chain of amino acids, and biologists write it as a string too, one letter per amino acid, such as `"MKWVTFISLL"`.
+You don't need to be a biologist; each exercise explains the little biology it needs. Here is the core. **DNA** is a long chain built from four kinds of building block called nucleotides, written as the letters `A`, `C`, `G` and `T`, so a piece of DNA is simply a string such as `"GATTACA"`. DNA is double-stranded, and the two strands pair up letter by letter: `A` always sits opposite `T`, and `C` opposite `G`. **RNA** is a working copy of DNA that uses the same alphabet, except that `U` takes the place of `T`. A cell reads RNA three letters at a time; each three-letter **codon** stands for one amino acid, or for "stop". A **protein** is a chain of amino acids, and biologists write it as a string too, one letter per amino acid, such as `"MKWVTFISLL"`.
 
 That is enough to start: to a programmer, most of bioinformatics is careful work with strings.
 
@@ -196,7 +212,7 @@ The DNA string GATTACA is 7 letters long.
 
 ? In `println!("{:?}", x)`, what does `{:?}` do?
 + Formats `x` with its Debug representation.
-- Prints `x` only if it is an `Option`.
+- Prints `x` only if it is not empty.
 - Asks the user for input.
-= `{:?}` uses the `Debug` trait, which most types implement. `{}` uses `Display`, which is meant for user-facing output.
+= `{:?}` uses Debug formatting, a programmer-facing view that works for most values (strings show their quotes, for example). `{}` is meant for polished, user-facing output.
 ```

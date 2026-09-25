@@ -88,6 +88,10 @@ world, hello!
 
 `hello` doesn't copy any text. It points into the heap memory owned by `s`, with a length of 5.
 
+:::note Coming from Python
+In Python, `s[i:i+k]` quietly gives you a shorter result if the range runs past the end. In Rust, a range past the end of a string or array panics instead: `&dna[5..9]` on the 7-letter `"GATTACA"` stops the program with `byte index 9 is out of bounds`. Check the bounds yourself before slicing.
+:::
+
 Because a slice is a borrow, all the rules from the last lesson apply. Here is a function that returns the first word of a string, and a program that tries to clear the string while that word is still in use:
 
 ```rust,compile_fail
@@ -189,6 +193,8 @@ The rule of thumb: take `&str` when you only need to read text, and use `String`
 
 ## Strings are UTF-8
 
+Good news first: DNA, RNA and protein strings are plain ASCII, one byte per letter, so the complications in this section don't affect them. They matter as soon as your program handles other text, such as names or file contents, so it is worth knowing them.
+
 A `String` stores its text as **UTF-8** bytes. UTF-8 uses a single byte for each basic English letter, but two, three or four bytes for other characters. So the length of a string, in bytes, is not the same as the number of characters:
 
 ```rust
@@ -270,7 +276,7 @@ fn main() {
 ```
 
 ```text
-thread 'main' panicked at src/main.rs:3:19:
+thread 'main' (51842) panicked at src/main.rs:3:19:
 byte index 1 is not a char boundary; it is inside 'З' (bytes 0..2) of `Здравствуйте`
 ```
 
@@ -360,6 +366,7 @@ Write `fn hamming(s: &str, t: &str) -> usize`. Paste the two lines of your datas
 fn hamming(s: &str, t: &str) -> usize {
     let a = s.as_bytes(); // &[u8]: a slice of the bytes
     let b = t.as_bytes();
+    assert_eq!(a.len(), b.len()); // stop with a panic if the lengths differ
     let mut differences = 0;
     for i in 0..a.len() {
         if a[i] != b[i] {
@@ -380,7 +387,7 @@ fn main() {
 4
 ```
 
-Both parameters are borrowed: `hamming` only reads the sequences, so taking `&str` means it works equally well with literals, slices and `String`s. The `.trim()` calls matter here, because a pasted newline on just one of the strings would make the lengths differ. If they ever did differ, `b[i]` would eventually be out of bounds and the program would panic, rather than print a wrong answer.
+Both parameters are borrowed: `hamming` only reads the sequences, so taking `&str` means it works equally well with literals, slices and `String`s. The `.trim()` calls matter here, because a pasted newline on just one of the strings would make the lengths differ. Without a check, different lengths would go wrong in two ways: if `t` were shorter, `b[i]` would run off its end and panic; if `t` were longer, its extra letters would be silently ignored and you'd get a wrong answer. `assert_eq!(x, y)` rules out both: it does nothing when the two values are equal, and panics with a message showing both values when they aren't. A clear crash is much easier to track down than a quietly wrong number.
 :::
 
 :::rosalind SUBS Finding a Motif in DNA
@@ -393,7 +400,7 @@ Both parameters are borrowed: `hamming` only reads the sequences, so taking `&st
 
 So for that example the output is `2 4 9 11`.
 
-Slide a window the length of `t` along `s`: for each starting byte index `i`, compare the slice `&s[i..i + t.len()]` with `t`. Stop when the window would run past the end of `s`.
+Slide a window the length of `t` along `s`: for each starting byte index `i`, compare the slice `&s[i..i + t.len()]` with `t`. Stop when the window would run past the end of `s`: a range that goes beyond the end of a string makes the program panic, rather than giving you a shorter piece.
 :::solution
 ```rust
 fn main() {

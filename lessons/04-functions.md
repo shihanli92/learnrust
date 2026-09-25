@@ -292,6 +292,8 @@ A formula like this, where each value is built from earlier ones, is called a **
 
 Fill in `rabbits` below. You need to repeat a step once for each month from 3 to `n`. Loops are the topic of the next lesson, but here is all you need: `for _ in 3..=n { ... }` runs the body once for each month from 3 up to and including `n`. (The `_` means you don't need to know which month it is.)
 
+**Hint.** You never need the whole history, only the last two months. Keep two `mut` variables, one for last month's count and one for the month before. Each time round the loop, compute this month's count from those two, then shift both forward one month: the month before becomes last month, and last month becomes this month. Try the example by hand on paper first if it helps.
+
 ```rust
 fn rabbits(n: u32, k: u64) -> u64 {
     // Your code here.

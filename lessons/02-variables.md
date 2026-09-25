@@ -280,7 +280,7 @@ Found 3 G bases.
 :::
 
 :::rosalind IEV Calculating Expected Offspring
-**The biology.** Most genes come in two versions, called alleles: a *dominant* one written `A` and a *recessive* one written `a`. Every animal carries two copies, so it is `AA`, `Aa` or `aa`, and a child gets one copy from each parent, picked at random. The child shows the dominant trait (the dominant *phenotype*) if it has at least one `A`.
+**The biology.** For this problem, assume the gene has two versions, called alleles: a *dominant* one written `A` and a *recessive* one written `a`. Diploid organisms (like us, and Mendel's peas) carry two copies of each gene, so an individual is `AA`, `Aa` or `aa`, and a child gets one copy from each parent, picked at random. The child shows the dominant trait (the dominant *phenotype*) if it has at least one `A`.
 
 That gives a fixed chance of a dominant-looking child for each kind of couple:
 
@@ -297,7 +297,15 @@ That gives a fixed chance of a dominant-looking child for each kind of couple:
 
 For example, the counts `2 1 0 3 1 2` give 11.5 (that is 2·(2 + 1 + 0) + 2·0.75·3 + 2·0.5·1).
 
-Store each count in its own `let` binding, and the number of children per couple in a `const`. Write the counts with `.0` on the end, such as `3.0`, so they are `f64` values: Rust will not multiply a whole number by a decimal like `0.75`, and the next lesson shows how to convert between the two.
+Store each count in its own `let` binding, and the number of children per couple in a `const`. Write the counts with `.0` on the end, such as `3.0`, so they are `f64` values: Rust will not multiply a whole number by a decimal like `0.75`, and the next lesson shows how to convert between the two. If you forget a `.0`, the error starts like this:
+
+```text
+error[E0277]: cannot multiply `{integer}` by `{float}`
+  --> src/main.rs:13:68
+   |
+```
+
+The first line is the one that matters: a whole number (`{integer}`) is being multiplied by a decimal (`{float}`), and the `-->` line points at the `*` next to the number that lost its `.0`. The twenty or so lines after it, about traits and `Mul`, list other types that *can* be multiplied, and you can skip them for now.
 :::solution
 ```rust
 const CHILDREN_PER_COUPLE: f64 = 2.0;

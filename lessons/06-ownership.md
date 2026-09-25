@@ -9,12 +9,24 @@ Ownership is the idea that makes Rust different from almost every other language
 
 Every program has to manage memory: ask for it when data is created, and give it back when the data is no longer needed. Some languages, such as Python, Java and Go, use a **garbage collector** that finds unused memory while the program runs. Others, such as C, make you free memory by hand, and forgetting (or doing it twice) causes crashes and security holes. Rust takes a third path: a small set of **ownership rules** that the compiler checks. If your code breaks them, it does not compile. If it compiles, memory is freed at exactly the right moment, with no runtime cost.
 
+## A picture from the lab
+
+Before the technical details, here is an everyday picture. Think of your program's data as sample boxes in a shared lab freezer:
+
+- The **owner** is the name on the box label. Every box has exactly one name on it.
+- A **move** is relabelling the box with someone else's name. The sample doesn't go anywhere, but the old name no longer has any claim to it.
+- A **clone** is making an aliquot: a second, independent box with its own label. It takes time and freezer space, so you only do it when you need to.
+- A **borrow** (next lesson) is lending a tube to a labmate. They can use it, but it is still yours, and they must hand it back.
+- A **drop** is the box being thrown out when its owner leaves the lab, so the freezer never fills up with forgotten samples.
+
+Keep this picture in mind; the rest of the lesson shows what each part looks like in real memory.
+
 ## The stack and the heap
 
 To see why ownership matters, you need a rough picture of where values live while a program runs. There are two regions of memory:
 
 - The **stack** holds values whose size is known at compile time: integers, floats, `bool`, `char`, and tuples and arrays made of them. Each function call gets a slot on the stack for its local variables, and the slot is thrown away when the function returns. It is very fast and completely automatic.
-- The **heap** holds data whose size is only known while the program runs, or that can grow, such as a piece of text the user typed. The program asks for heap space, gets back a **pointer** (the address of that space), and must eventually give it back.
+- The **heap** holds data whose size is only known while the program runs, or that can grow, such as a piece of text the user typed. The program asks for heap space, gets back a **pointer** (the address of that space, like a note saying which shelf a box is on), and must eventually give it back.
 
 Stack values clean themselves up. Heap memory is the tricky part: something has to decide *when* it is safe to free it. Free it too early and other code reads garbage; free it twice and the program can crash or be exploited; never free it and memory leaks. Ownership is Rust's answer to "who frees this, and when?"
 
@@ -124,13 +136,17 @@ help: consider cloning the value if the performance cost is acceptable
 +----------+-----+
 ```
 
-That is dangerous. When both `s1` and `s2` go out of scope, both would try to free the same memory, a bug called a **double free**. Rule 2 prevents it: a value has only one owner. So instead of sharing, Rust **moves** ownership from `s1` to `s2`, and `s1` is no longer usable. Only `s2` will free the memory. If you try to use `s1`, you get error E0382, "use of moved value" (here worded as "borrow of moved value", because `println!` borrows its arguments).
+That is dangerous. When both `s1` and `s2` go out of scope, both would try to free the same memory, a bug called a **double free**. Rule 2 prevents it: a value has only one owner. So instead of sharing, Rust **moves** ownership from `s1` to `s2`, and `s1` is no longer usable. Only `s2` will free the memory. If you try to use `s1`, you get error E0382, "use of moved value" (here worded as "borrow of moved value", because `println!` only looks at its arguments without taking them, which Rust calls *borrowing*: the topic of the next lesson).
 
 The key facts about a move:
 
 - It is cheap: only the few bytes on the stack are copied, however long the text is.
 - The old variable is invalid afterwards, and the compiler enforces it.
 - Rust never copies heap data behind your back. Any expensive copy is visible in your code.
+
+:::note Coming from Python
+In Python, `b = a` makes two names for one shared object, and both stay usable. In Rust, `let s2 = s1;` hands the value over: `s2` is now the only name for it, and `s1` can't be used. If you want Python's "both names still work", you either clone or borrow.
+:::
 
 ## Clone: an explicit deep copy
 
@@ -366,7 +382,7 @@ The next lesson shows the tidiest fix of all: let `report` borrow the string.
 :::
 
 :::rosalind RNA Transcribing DNA into RNA
-**The biology.** To use a gene, a cell first copies it from DNA into RNA, a step called **transcription**. The RNA copy has the same sequence, except that every `T` (thymine) becomes a `U` (uracil).
+**The biology.** To use a gene, a cell first copies it from DNA into RNA, a step called **transcription**. The RNA is built by pairing with one DNA strand (the *template* strand), so it ends up with the same sequence as the other strand (the *coding* strand), except that every `T` (thymine) becomes a `U` (uracil). Rosalind gives you the coding strand, so you only need to swap the letters.
 
 **The task.** The input is one DNA string (up to 1000 letters). Print the RNA string you get by replacing every `T` with `U`. For example, `GATTACAGGCTAACGT` becomes `GAUUACAGGCUAACGU`.
 
@@ -440,9 +456,9 @@ Notice that `replace` did *not* take ownership: you could still print `dna` afte
 - `i32` values are always constants.
 + `String` owns heap memory that must be freed exactly once; `i32` owns nothing that needs freeing.
 - `Copy` is only for numbers.
-= A type can be `Copy` only if duplicating its bits is a complete, safe copy. A `String` owns a heap allocation, so a bitwise copy would lead to a double free.
+= A type can be `Copy` only if duplicating its bits is a complete, safe copy. A `String` owns a heap allocation, so copying just its stack bytes would give two owners of one allocation, and it would be freed twice.
 
-? When is a `String` that was passed by value into a function dropped (assuming the function doesn't return it)?
+? A `String` is moved into a function as its parameter, as in `print_it(s)`. When is it dropped (assuming the function doesn't return it)?
 - At the end of `main`.
 + When the function's body ends.
 - Immediately after the call site line.
