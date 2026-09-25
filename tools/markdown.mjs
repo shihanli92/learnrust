@@ -63,13 +63,14 @@ function renderCode(info, code, ctx) {
   const isRust = lang === "rust";
   const badges = [];
   if (flags.includes("compile_fail")) badges.push(`<span class="badge badge-fail">Does not compile</span>`);
-  if (flags.includes("should_panic")) badges.push(`<span class="badge badge-panic">Panics at runtime</span>`);
+  if (flags.includes("should_panic"))
+    badges.push(`<span class="badge badge-panic">${/#\[test\]/.test(code) ? "Test fails on purpose" : "Panics at runtime"}</span>`);
   const fileName = flags.find((f) => f.startsWith("file="));
   const label = fileName ? fileName.slice(5) : { rust: "Rust", toml: "TOML", console: "Terminal", text: "Output" }[lang] || lang;
 
   // Rust blocks that stand on their own become editable and runnable in the page.
   const editable = isRust && !flags.includes("ignore");
-  const kind = /#\[test\]/.test(code) ? "test" : /fn main\s*\(/.test(code) ? "bin" : "lib";
+  const kind = /#\[test\]/.test(code) ? "test" : /^\s*(pub\s+)?fn main\s*\(/m.test(code) ? "bin" : "lib";
   const actions = [`<button type="button" class="code-btn" data-copy>Copy</button>`];
   if (editable) {
     actions.push(`<a class="code-btn" data-play target="_blank" rel="noopener" href="https://play.rust-lang.org/">Playground ↗</a>`);
@@ -134,14 +135,17 @@ export function render(md, ctx = { file: "?", quizCount: 0, exerciseCount: 0, to
     if (line.trim() === "") { i++; continue; }
 
     // Fenced code
-    const fence = line.match(/^```(.*)$/);
+    // A fence of N backticks closes only at a line of at least N backticks,
+    // so a ```` block can show a file that itself contains ``` fences.
+    const fence = line.match(/^(`{3,})([^`]*)$/);
     if (fence) {
+      const close = new RegExp(`^\`{${fence[1].length},}\\s*$`);
       const buf = [];
       i++;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) buf.push(lines[i++]);
+      while (i < lines.length && !close.test(lines[i])) buf.push(lines[i++]);
       if (i >= lines.length) throw new Error(`Unclosed code fence in ${ctx.file}`);
       i++;
-      html.push(renderCode(fence[1], buf.join("\n"), ctx));
+      html.push(renderCode(fence[2], buf.join("\n"), ctx));
       continue;
     }
 
@@ -248,13 +252,14 @@ export function codeBlocks(md) {
   const out = [];
   const lines = md.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^```(.*)$/);
+    const m = lines[i].match(/^(`{3,})([^`]*)$/);
     if (!m) continue;
+    const close = new RegExp(`^\`{${m[1].length},}\\s*$`);
     const start = i + 1;
     const buf = [];
     i++;
-    while (i < lines.length && !/^```\s*$/.test(lines[i])) buf.push(lines[i++]);
-    out.push({ info: m[1], code: buf.join("\n"), line: start });
+    while (i < lines.length && !close.test(lines[i])) buf.push(lines[i++]);
+    out.push({ info: m[2], code: buf.join("\n"), line: start });
   }
   return out;
 }

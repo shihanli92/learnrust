@@ -365,7 +365,7 @@ test result: <span class="tok-ok">ok</span>. 12 passed; 0 failed
 
   function kindOf(code) {
     if (/#\[test\]/.test(code)) return "test";
-    if (/fn main\s*\(/.test(code)) return "bin";
+    if (/^\s*(pub\s+)?fn main\s*\(/m.test(code)) return "bin";
     return "lib";
   }
 

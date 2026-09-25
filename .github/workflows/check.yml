@@ -1,0 +1,29 @@
+name: Check lessons
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Compile and run every lesson example
+        run: node tools/check.mjs
+      - name: Built site is up to date
+        run: |
+          node tools/build.mjs
+          git diff --exit-code dist/ || (echo "dist/ is stale: run 'node tools/build.mjs' and commit" && exit 1)
+      - name: Capstone crate
+        working-directory: capstone/wordstat
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test

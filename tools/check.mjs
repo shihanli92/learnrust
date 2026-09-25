@@ -10,7 +10,7 @@
 
 import { readdirSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { codeBlocks, parseInfo } from "./markdown.mjs";
 
@@ -42,7 +42,7 @@ for (const file of files) {
     const src = base + ".rs";
     writeFileSync(src, block.code + "\n");
 
-    const hasMain = /fn main\s*\(/.test(block.code);
+    const hasMain = /^\s*(pub\s+)?fn main\s*\(/m.test(block.code);
     const hasTests = /#\[test\]/.test(block.code);
     const args = [src, "-o", base];
     if (hasTests) args.unshift("--test");
